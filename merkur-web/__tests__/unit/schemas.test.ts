@@ -66,6 +66,11 @@ describe('createNoteSchema', () => {
       createNoteSchema.safeParse({ title: 'Hello', folder_id: VALID_UUID }).success
     ).toBe(true)
   })
+  it('rejects empty title string', () => {
+    const result = createNoteSchema.safeParse({ title: '' })
+    expect(result.success).toBe(false)
+    expect(result.error?.issues[0].message).toBe('Title is required')
+  })
   it('rejects title over 60 characters', () => {
     const result = createNoteSchema.safeParse({ title: 'a'.repeat(61) })
     expect(result.success).toBe(false)

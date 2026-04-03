@@ -21,7 +21,7 @@ export const deleteFolderSchema = z.object({
 })
 
 export const createNoteSchema = z.object({
-  title: z.string().min(1).max(60, 'Title must be 60 characters or fewer').optional(),
+  title: z.string().min(1, 'Title is required').max(60, 'Title must be 60 characters or fewer').optional(),
   folder_id: z.string().uuid().nullable().optional(),
 })
 
