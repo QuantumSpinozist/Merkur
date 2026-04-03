@@ -1,0 +1,19 @@
+[tool.ruff]
+line-length = 88
+src = ["merkur-brain"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["merkur-brain"]
+
+[[tool.mypy.overrides]]
+module = "supabase.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "dotenv.*"
+ignore_missing_imports = true
