@@ -41,6 +41,7 @@ export default function NoteEditor({ note, folders }: Props) {
   const editor = useEditor({
     extensions: [StarterKit],
     content: note.content ?? '',
+    immediatelyRender: false,
     onUpdate({ editor }) {
       debouncedSave({ content: editor.getHTML() })
     },
