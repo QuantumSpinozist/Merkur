@@ -20,7 +20,5 @@ export default async function NotePage({ params }: Props) {
 
   if (!note) notFound()
 
-  return (
-    <NoteEditor note={note as Note} folders={(folders ?? []) as Folder[]} />
-  )
+  return <NoteEditor note={note as Note} folders={(folders ?? []) as Folder[]} />
 }

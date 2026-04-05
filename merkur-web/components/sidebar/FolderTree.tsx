@@ -23,7 +23,11 @@ export default function FolderTree({ folders }: Props) {
   function toggleExpand(id: string) {
     setExpanded((prev) => {
       const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
       return next
     })
   }
@@ -95,9 +99,7 @@ export default function FolderTree({ folders }: Props) {
       <div key={folder.id}>
         <div
           className={`flex items-center gap-1 px-2 py-1 rounded group ${
-            isActive
-              ? 'bg-amber-100 text-amber-900'
-              : 'hover:bg-stone-200 text-stone-600'
+            isActive ? 'bg-amber-100 text-amber-900' : 'hover:bg-stone-200 text-stone-600'
           }`}
           style={{ paddingLeft: `${(depth + 1) * 10}px` }}
         >
@@ -163,9 +165,7 @@ export default function FolderTree({ folders }: Props) {
   return (
     <div>
       <div className="flex items-center justify-between px-2 py-1 mb-1">
-        <span className="text-xs font-medium text-stone-400 uppercase tracking-wide">
-          Folders
-        </span>
+        <span className="text-xs font-medium text-stone-400 uppercase tracking-wide">Folders</span>
         <button
           onClick={() => void createFolder()}
           className="text-stone-400 hover:text-stone-700 text-base leading-none"
@@ -175,9 +175,7 @@ export default function FolderTree({ folders }: Props) {
         </button>
       </div>
       {topLevel.map((folder) => renderFolder(folder))}
-      {topLevel.length === 0 && (
-        <p className="text-xs text-stone-400 px-2 py-1">No folders yet.</p>
-      )}
+      {topLevel.length === 0 && <p className="text-xs text-stone-400 px-2 py-1">No folders yet.</p>}
     </div>
   )
 }

@@ -27,9 +27,7 @@ export default async function FolderPage({ params }: Props) {
 
   return (
     <div className="max-w-2xl mx-auto p-8">
-      <h2 className="text-2xl font-serif font-semibold text-stone-800 mb-6">
-        {folder.name}
-      </h2>
+      <h2 className="text-2xl font-serif font-semibold text-stone-800 mb-6">{folder.name}</h2>
       <NoteList folder={folder as Folder} notes={(notes ?? []) as Note[]} />
     </div>
   )

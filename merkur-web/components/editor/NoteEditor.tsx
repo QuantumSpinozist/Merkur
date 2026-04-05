@@ -89,8 +89,7 @@ export default function NoteEditor({ note, folders }: Props) {
         <div className="flex items-center gap-4">
           {lastSaved && (
             <span>
-              Saved{' '}
-              {lastSaved.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              Saved {lastSaved.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
           )}
           <button

@@ -1,0 +1,66 @@
+repos:
+  # General file hygiene
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: check-merge-conflict
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  # Secret detection
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+
+  # Python — ruff (lint + format) for merkur-brain
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^merkur-brain/
+      - id: ruff-format
+        files: ^merkur-brain/
+
+  # TypeScript — eslint, prettier, tsc, jest (merkur-web)
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint
+        entry: bash -c 'cd merkur-web && npm run lint'
+        language: system
+        files: ^merkur-web/.*\.(ts|tsx)$
+        pass_filenames: false
+
+      - id: prettier-check
+        name: prettier
+        entry: bash -c 'cd merkur-web && npm run format:check'
+        language: system
+        files: ^merkur-web/.*\.(ts|tsx|json|md)$
+        pass_filenames: false
+
+      - id: typecheck
+        name: tsc typecheck
+        entry: bash -c 'cd merkur-web && npm run typecheck'
+        language: system
+        files: ^merkur-web/.*\.(ts|tsx)$
+        pass_filenames: false
+
+      - id: jest-unit
+        name: jest unit tests
+        entry: bash -c 'cd merkur-web && npm run test:unit'
+        language: system
+        files: ^merkur-web/.*\.(ts|tsx)$
+        pass_filenames: false
+
+  # Commit message linting
+  - repo: https://github.com/alessandrojcm/commitlint-pre-commit-hook
+    rev: v9.18.0
+    hooks:
+      - id: commitlint
+        stages: [commit-msg]
+        additional_dependencies: ['@commitlint/config-conventional']

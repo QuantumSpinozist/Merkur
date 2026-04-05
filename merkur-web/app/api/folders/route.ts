@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import {
-  createFolderSchema,
-  updateFolderSchema,
-  deleteFolderSchema,
-} from '@/lib/schemas'
+import { createFolderSchema, updateFolderSchema, deleteFolderSchema } from '@/lib/schemas'
 import type { Folder } from '@/lib/types'
 
 export async function GET() {

@@ -14,9 +14,7 @@ describe('createFolderSchema', () => {
     expect(createFolderSchema.safeParse({ name: 'Work' }).success).toBe(true)
   })
   it('accepts a name with optional parent_id', () => {
-    expect(
-      createFolderSchema.safeParse({ name: 'Sub', parent_id: VALID_UUID }).success
-    ).toBe(true)
+    expect(createFolderSchema.safeParse({ name: 'Sub', parent_id: VALID_UUID }).success).toBe(true)
   })
   it('rejects an empty name', () => {
     const result = createFolderSchema.safeParse({ name: '' })
@@ -62,9 +60,7 @@ describe('createNoteSchema', () => {
     expect(createNoteSchema.safeParse({}).success).toBe(true)
   })
   it('accepts title and folder_id', () => {
-    expect(
-      createNoteSchema.safeParse({ title: 'Hello', folder_id: VALID_UUID }).success
-    ).toBe(true)
+    expect(createNoteSchema.safeParse({ title: 'Hello', folder_id: VALID_UUID }).success).toBe(true)
   })
   it('rejects empty title string', () => {
     const result = createNoteSchema.safeParse({ title: '' })
@@ -80,9 +76,7 @@ describe('createNoteSchema', () => {
 
 describe('updateNoteSchema', () => {
   it('accepts id with optional fields', () => {
-    expect(
-      updateNoteSchema.safeParse({ id: VALID_UUID, title: 'Hello' }).success
-    ).toBe(true)
+    expect(updateNoteSchema.safeParse({ id: VALID_UUID, title: 'Hello' }).success).toBe(true)
   })
   it('rejects invalid uuid', () => {
     const result = updateNoteSchema.safeParse({ id: 'bad' })
