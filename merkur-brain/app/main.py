@@ -1,11 +1,14 @@
 """FastAPI application entry point for merkur-brain."""
 
 import logging
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
 
 from app.routers import telegram
+from app.services.telegram import set_commands
 
 load_dotenv()
 
@@ -14,7 +17,19 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s — %(message)s",
 )
 
-app = FastAPI(title="merkur-brain", version="0.1.0")
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    try:
+        await set_commands()
+    except Exception as exc:
+        logger.warning("Could not register bot commands on startup: %s", exc)
+    yield
+
+
+app = FastAPI(title="merkur-brain", version="0.1.0", lifespan=lifespan)
 
 app.include_router(telegram.router)
 

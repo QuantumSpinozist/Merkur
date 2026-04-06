@@ -8,24 +8,18 @@ from app.main import app
 client = TestClient(app)
 
 EMPTY_UPDATE = {"update_id": 1}
-TEXT_UPDATE = {
-    "update_id": 1,
-    "message": {
-        "message_id": 42,
-        "from": {"id": 999, "first_name": "Aaron"},
-        "chat": {"id": 999, "type": "private"},
-        "text": "buy milk",
-    },
-}
-NON_TEXT_UPDATE = {
-    "update_id": 2,
-    "message": {
-        "message_id": 43,
-        "from": {"id": 999, "first_name": "Aaron"},
-        "chat": {"id": 999, "type": "private"},
-        # no "text" key — e.g. a photo
-    },
-}
+
+
+def _text_update(text: str) -> dict:
+    return {
+        "update_id": 1,
+        "message": {
+            "message_id": 42,
+            "from": {"id": 999, "first_name": "Aaron"},
+            "chat": {"id": 999, "type": "private"},
+            "text": text,
+        },
+    }
 
 
 class TestSecretTokenVerification:
@@ -55,16 +49,67 @@ class TestSecretTokenVerification:
         assert response.status_code == 403
 
 
-class TestMessageHandling:
-    def test_non_text_update_returns_200(self, monkeypatch: pytest.MonkeyPatch) -> None:
+class TestCommandHandling:
+    def test_start_command_returns_200(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        mocker: pytest.fixture,  # type: ignore[type-arg]
+    ) -> None:
         monkeypatch.delenv("TELEGRAM_WEBHOOK_SECRET", raising=False)
-        response = client.post("/webhook/telegram", json=NON_TEXT_UPDATE)
+        mocker.patch("app.routers.telegram.tg_service.send_message")
+        response = client.post("/webhook/telegram", json=_text_update("/start"))
         assert response.status_code == 200
         assert response.json() == {"ok": True}
 
-    def test_empty_update_no_message_returns_200(
-        self, monkeypatch: pytest.MonkeyPatch
+    def test_help_command_returns_200(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        mocker: pytest.fixture,  # type: ignore[type-arg]
     ) -> None:
+        monkeypatch.delenv("TELEGRAM_WEBHOOK_SECRET", raising=False)
+        mocker.patch("app.routers.telegram.tg_service.send_message")
+        response = client.post("/webhook/telegram", json=_text_update("/help"))
+        assert response.status_code == 200
+
+    def test_unknown_command_returns_200(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        mocker: pytest.fixture,  # type: ignore[type-arg]
+    ) -> None:
+        monkeypatch.delenv("TELEGRAM_WEBHOOK_SECRET", raising=False)
+        mocker.patch("app.routers.telegram.tg_service.send_message")
+        response = client.post("/webhook/telegram", json=_text_update("/unknowncmd"))
+        assert response.status_code == 200
+
+    def test_note_command_without_text_returns_200(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        mocker: pytest.fixture,  # type: ignore[type-arg]
+    ) -> None:
+        monkeypatch.delenv("TELEGRAM_WEBHOOK_SECRET", raising=False)
+        mocker.patch("app.routers.telegram.tg_service.send_message")
+        response = client.post("/webhook/telegram", json=_text_update("/note"))
+        assert response.status_code == 200
+
+
+class TestMessageHandling:
+    def test_non_text_update_returns_200(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("TELEGRAM_WEBHOOK_SECRET", raising=False)
+        response = client.post(
+            "/webhook/telegram",
+            json={
+                "update_id": 2,
+                "message": {
+                    "message_id": 43,
+                    "from": {"id": 999, "first_name": "Aaron"},
+                    "chat": {"id": 999, "type": "private"},
+                },
+            },
+        )
+        assert response.status_code == 200
+        assert response.json() == {"ok": True}
+
+    def test_empty_update_returns_200(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("TELEGRAM_WEBHOOK_SECRET", raising=False)
         response = client.post("/webhook/telegram", json=EMPTY_UPDATE)
         assert response.status_code == 200
