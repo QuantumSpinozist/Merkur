@@ -62,7 +62,38 @@ async def update_note_content(note_id: str, cleaned_content: str) -> None:
 # Todos
 # ---------------------------------------------------------------------------
 
-_TELEGRAM_TODOS_TITLE = "Telegram Todos"
+_TELEGRAM_TODOS_TITLE = "Miscellaneous Todos"
+
+
+async def create_folder(name: str, parent_name: str | None = None) -> FolderRecord:
+    """Create a folder, optionally nested under an existing parent."""
+    client = get_client()
+    parent_id: str | None = None
+
+    if parent_name:
+        result = (
+            client.table("folders")
+            .select("id")
+            .ilike("name", parent_name)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            result = (
+                client.table("folders")
+                .select("id")
+                .ilike("name", f"%{parent_name}%")
+                .limit(1)
+                .execute()
+            )
+        if result.data:
+            parent_id = result.data[0]["id"]
+
+    created = (
+        client.table("folders").insert({"name": name, "parent_id": parent_id}).execute()
+    )
+    row = created.data[0]
+    return FolderRecord(id=row["id"], name=row["name"], parent_id=row.get("parent_id"))
 
 
 async def find_note_by_title(

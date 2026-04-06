@@ -1,36 +1,69 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# merkur-web
 
-## Getting Started
+Next.js frontend for Merkur — markdown note editor with folder organisation and todo management.
 
-First, run the development server:
+## What it does
+
+- Folder sidebar with nested folders (one level deep for MVP)
+- Note editor powered by TipTap (markdown, auto-save)
+- Todo lists embedded below each note — add, check off, set due dates and recurrence
+- Aggregated todos view across all notes, grouped by folder
+- Single-user auth via Supabase magic link
+
+## Stack
+
+- **Next.js 14** (App Router)
+- **TipTap** — rich text / markdown editor
+- **Supabase** — auth + database (`@supabase/ssr`)
+- **Tailwind CSS**
+- **Zod** — API request validation
+- Deployed on **Vercel**
+
+## Running locally
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+cp .env.example .env.local   # fill in Supabase keys
+npm run dev                  # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Environment variables
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=     # server-side only
+NEXT_PUBLIC_APP_URL=
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Project structure
 
-## Learn More
+```
+app/
+├── (auth)/login/            # Magic link login page
+├── (app)/
+│   ├── layout.tsx           # Sidebar + auth guard
+│   ├── page.tsx             # Redirect to first folder
+│   ├── notes/[noteId]/      # Note editor view
+│   ├── folders/[folderId]/  # Folder note list
+│   └── todos/               # Aggregated todos view
+└── api/
+    ├── notes/               # Note CRUD
+    ├── folders/             # Folder CRUD
+    └── todos/               # Todo CRUD (recurrence resets on GET)
+components/
+├── editor/NoteEditor.tsx    # TipTap editor with auto-save
+├── sidebar/                 # Sidebar, FolderTree, NoteList, TodosNavLink
+└── todos/                   # TodoList (per-note), TodosView (aggregated)
+lib/
+├── supabase/                # Browser + server Supabase clients
+├── types.ts                 # Shared TypeScript types (in sync with DB schema)
+└── schemas.ts               # Zod schemas for API validation
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Tests
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm test                     # unit tests only (pre-commit safe)
+npm run test:integration     # API route tests with mocked Supabase (CI only)
+```

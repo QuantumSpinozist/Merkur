@@ -9,7 +9,14 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from app.agents.cleanup_agent import run_cleanup_agent
 from app.agents.intake_agent import run_intake_agent
-from app.models import CleanupInput, IntakeInput, TelegramMessage, TelegramUpdate
+from app.agents.intent_agent import run_intent_agent
+from app.models import (
+    CleanupInput,
+    IntakeInput,
+    IntentInput,
+    TelegramMessage,
+    TelegramUpdate,
+)
 from app.services import notes as notes_service
 from app.services import scheduler as scheduler_service
 from app.services import settings as settings_service
@@ -130,9 +137,8 @@ async def _handle_command(
         await _handle_done(arg.strip(), chat_id, background_tasks)
 
     else:
-        background_tasks.add_task(
-            tg_service.send_message, chat_id=chat_id, text=UNKNOWN_COMMAND_TEXT
-        )
+        # Free-text instruction prefixed with "/" — route to intent agent
+        await _handle_intent(text[1:].strip(), chat_id, background_tasks)
 
 
 async def _handle_todo(
@@ -337,6 +343,142 @@ async def _handle_remind(
         chat_id=chat_id,
         text=f"⏰ Daily reminder set for *{arg}*.",
     )
+
+
+async def _handle_intent(
+    text: str, chat_id: int, background_tasks: BackgroundTasks
+) -> None:
+    """Route a free-text '/' instruction through the intent agent."""
+    try:
+        folders = await notes_service.list_folders()
+        folder_list = [{"id": f.id, "name": f.name} for f in folders]
+        action = await run_intent_agent(
+            IntentInput(text=text, available_folders=folder_list)
+        )
+    except Exception as exc:
+        logger.error("Intent agent error: %s", exc)
+        background_tasks.add_task(
+            tg_service.send_message,
+            chat_id=chat_id,
+            text="⚠️ Something went wrong interpreting that. Try /help.",
+        )
+        return
+
+    if action.action == "create_todo":
+        if not action.todo_text:
+            background_tasks.add_task(
+                tg_service.send_message,
+                chat_id=chat_id,
+                text=(
+                    "I understood you want a todo but couldn't extract the text. "
+                    "Please be more specific."
+                ),
+            )
+            return
+        try:
+            if action.todo_note_query:
+                if "/" in action.todo_note_query:
+                    folder_part, _, title_part = action.todo_note_query.partition("/")
+                    note = await notes_service.find_note_by_title(
+                        title_part.strip(), folder_query=folder_part.strip()
+                    )
+                else:
+                    note = await notes_service.find_note_by_title(
+                        action.todo_note_query
+                    )
+                if note is None:
+                    background_tasks.add_task(
+                        tg_service.send_message,
+                        chat_id=chat_id,
+                        text=(
+                            f'⚠️ No note found matching "{action.todo_note_query}". '
+                            "Check the title and try again."
+                        ),
+                    )
+                    return
+            else:
+                note = await notes_service.get_or_create_telegram_todos_note()
+
+            todo = await notes_service.create_todo(
+                note_id=note.id,
+                text=action.todo_text,
+                due_date=action.todo_due_date,
+                recurrence=action.todo_recurrence,
+            )
+        except Exception as exc:
+            logger.error("Intent: failed to create todo: %s", exc)
+            background_tasks.add_task(
+                tg_service.send_message,
+                chat_id=chat_id,
+                text="⚠️ Something went wrong saving the todo.",
+            )
+            return
+
+        parts = [f'✅ Added to *{note.title}*: "{todo.text}"']
+        if todo.due_date:
+            parts.append(f"due {todo.due_date}")
+        if todo.recurrence:
+            parts.append(f"repeats {todo.recurrence}")
+        background_tasks.add_task(
+            tg_service.send_message, chat_id=chat_id, text=" — ".join(parts)
+        )
+
+    elif action.action == "create_note":
+        await _save_note(
+            action.note_content or text,
+            chat_id,
+            background_tasks,
+            forced_title=action.note_title,
+        )
+
+    elif action.action == "list_todos":
+        await _send_todo_list(chat_id, background_tasks)
+
+    elif action.action == "create_folder":
+        if not action.folder_name:
+            background_tasks.add_task(
+                tg_service.send_message,
+                chat_id=chat_id,
+                text=(
+                    "I understood you want a folder but couldn't get the name. "
+                    "Please be more specific."
+                ),
+            )
+            return
+        try:
+            folder = await notes_service.create_folder(
+                name=action.folder_name,
+                parent_name=action.folder_parent_name,
+            )
+        except Exception as exc:
+            logger.error("Intent: failed to create folder: %s", exc)
+            background_tasks.add_task(
+                tg_service.send_message,
+                chat_id=chat_id,
+                text="⚠️ Something went wrong creating the folder.",
+            )
+            return
+
+        if folder.parent_id:
+            msg = f"📁 Created sub-folder *{folder.name}*."
+        else:
+            msg = f"📁 Created folder *{folder.name}*."
+        background_tasks.add_task(tg_service.send_message, chat_id=chat_id, text=msg)
+
+    elif action.action == "complete_todo":
+        number = action.todo_number
+        if not number:
+            background_tasks.add_task(
+                tg_service.send_message,
+                chat_id=chat_id,
+                text="Which todo? Use /todo list for numbers, then /done <number>.",
+            )
+            return
+        await _handle_done(str(number), chat_id, background_tasks)
+
+    else:
+        reply = action.reply or "I didn't understand that. Try /help."
+        background_tasks.add_task(tg_service.send_message, chat_id=chat_id, text=reply)
 
 
 async def _save_note(

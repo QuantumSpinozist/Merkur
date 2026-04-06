@@ -118,3 +118,45 @@ class PendingTodo(BaseModel):
     due_date: str | None
     note_title: str
     folder_name: str | None
+
+
+# ---------------------------------------------------------------------------
+# Intent agent
+# ---------------------------------------------------------------------------
+
+
+class IntentInput(BaseModel):
+    text: str
+    available_folders: list[dict[str, str]]  # [{"id": str, "name": str}]
+
+
+class IntentAction(BaseModel):
+    """Structured action parsed from a free-text user instruction.
+
+    action values:
+      create_note  — save a note
+      create_todo  — add a todo
+      list_todos   — show pending todos
+      unknown      — could not understand; reply with `reply` field
+    """
+
+    # create_note | create_todo | list_todos | complete_todo | create_folder | unknown
+    action: str
+    # create_note
+    note_title: str | None = None
+    note_content: str | None = None
+    note_folder_id: str | None = None
+    # create_todo
+    todo_text: str | None = None
+    todo_note_query: str | None = (
+        None  # "Folder/Note" hint passed to find_note_by_title
+    )
+    todo_due_date: str | None = None
+    todo_recurrence: str | None = None  # daily | weekly | monthly
+    # complete_todo
+    todo_number: int | None = None  # 1-based index from /todo list
+    # create_folder
+    folder_name: str | None = None
+    folder_parent_name: str | None = None  # optional parent folder name
+    # unknown fallback
+    reply: str | None = None
