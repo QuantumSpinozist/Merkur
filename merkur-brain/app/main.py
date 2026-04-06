@@ -5,7 +5,7 @@ import logging
 from dotenv import load_dotenv
 from fastapi import FastAPI
 
-from app.routers import whatsapp
+from app.routers import telegram
 
 load_dotenv()
 
@@ -16,7 +16,7 @@ logging.basicConfig(
 
 app = FastAPI(title="merkur-brain", version="0.1.0")
 
-app.include_router(whatsapp.router)
+app.include_router(telegram.router)
 
 
 @app.get("/health")

@@ -33,36 +33,44 @@ class CleanupOutput(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# WhatsApp webhook payloads (Meta API shape — simplified for MVP)
+# Telegram webhook payloads (Bot API shape)
 # ---------------------------------------------------------------------------
 
 
-class WhatsAppTextMessage(BaseModel):
-    body: str
+class TelegramUser(BaseModel):
+    id: int
+    first_name: str
+    username: str | None = None
 
 
-class WhatsAppMessage(BaseModel):
-    id: str
-    from_: str  # sender phone number — aliased from "from" (reserved keyword)
+class TelegramChat(BaseModel):
+    id: int
     type: str
-    text: WhatsAppTextMessage | None = None
+
+
+class TelegramMessage(BaseModel):
+    message_id: int
+    from_: TelegramUser | None = None  # absent in channel posts
+    chat: TelegramChat
+    text: str | None = None
 
     model_config = {"populate_by_name": True}
 
     @classmethod
-    def from_payload(cls, data: dict) -> "WhatsAppMessage":
-        """Parse a message object from Meta's webhook payload."""
+    def from_payload(cls, data: dict) -> "TelegramMessage":
+        """Parse a message object from a Telegram Update payload."""
+        from_data = data.get("from")
         return cls(
-            id=data["id"],
-            from_=data["from"],
-            type=data["type"],
-            text=WhatsAppTextMessage(**data["text"]) if "text" in data else None,
+            message_id=data["message_id"],
+            from_=TelegramUser(**from_data) if from_data else None,
+            chat=TelegramChat(**data["chat"]),
+            text=data.get("text"),
         )
 
 
-class WhatsAppWebhookPayload(BaseModel):
-    object: str
-    entry: list[dict]
+class TelegramUpdate(BaseModel):
+    update_id: int
+    message: dict | None = None
 
 
 # ---------------------------------------------------------------------------

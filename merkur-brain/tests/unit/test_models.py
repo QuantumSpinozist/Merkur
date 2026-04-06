@@ -10,8 +10,8 @@ from app.models import (
     IntakeInput,
     IntakeOutput,
     NoteRecord,
-    WhatsAppMessage,
-    WhatsAppWebhookPayload,
+    TelegramMessage,
+    TelegramUpdate,
 )
 
 
@@ -63,34 +63,56 @@ class TestCleanupOutput:
         assert obj.cleaned_content.startswith("# Heading")
 
 
-class TestWhatsAppMessage:
+class TestTelegramMessage:
     def test_from_payload_text(self) -> None:
         data = {
-            "id": "msg-1",
-            "from": "+491234567890",
-            "type": "text",
-            "text": {"body": "Hello world"},
+            "message_id": 42,
+            "from": {"id": 999, "first_name": "Aaron", "username": "aaron"},
+            "chat": {"id": 999, "type": "private"},
+            "text": "Hello world",
         }
-        msg = WhatsAppMessage.from_payload(data)
-        assert msg.from_ == "+491234567890"
-        assert msg.text is not None
-        assert msg.text.body == "Hello world"
+        msg = TelegramMessage.from_payload(data)
+        assert msg.text == "Hello world"
+        assert msg.from_ is not None
+        assert msg.from_.id == 999
+        assert msg.chat.id == 999
 
     def test_from_payload_no_text(self) -> None:
-        data = {"id": "msg-2", "from": "+491234567890", "type": "image"}
-        msg = WhatsAppMessage.from_payload(data)
-        assert msg.type == "image"
+        data = {
+            "message_id": 43,
+            "from": {"id": 999, "first_name": "Aaron"},
+            "chat": {"id": 999, "type": "private"},
+        }
+        msg = TelegramMessage.from_payload(data)
         assert msg.text is None
 
+    def test_from_payload_no_from(self) -> None:
+        data = {
+            "message_id": 44,
+            "chat": {"id": -100123, "type": "channel"},
+            "text": "channel post",
+        }
+        msg = TelegramMessage.from_payload(data)
+        assert msg.from_ is None
+        assert msg.text == "channel post"
 
-class TestWhatsAppWebhookPayload:
-    def test_valid(self) -> None:
-        payload = WhatsAppWebhookPayload(object="whatsapp_business_account", entry=[])
-        assert payload.object == "whatsapp_business_account"
 
-    def test_invalid_missing_object(self) -> None:
+class TestTelegramUpdate:
+    def test_valid_with_message(self) -> None:
+        update = TelegramUpdate(
+            update_id=1,
+            message={"message_id": 1, "chat": {"id": 1, "type": "private"}},
+        )
+        assert update.update_id == 1
+        assert update.message is not None
+
+    def test_valid_no_message(self) -> None:
+        update = TelegramUpdate(update_id=1)
+        assert update.message is None
+
+    def test_missing_update_id(self) -> None:
         with pytest.raises(ValidationError):
-            WhatsAppWebhookPayload(entry=[])  # type: ignore[call-arg]
+            TelegramUpdate()  # type: ignore[call-arg]
 
 
 class TestServiceRecords:
@@ -100,10 +122,10 @@ class TestServiceRecords:
             title="Test",
             content=None,
             folder_id=None,
-            source="whatsapp",
+            source="telegram",
             is_cleaned=False,
         )
-        assert note.source == "whatsapp"
+        assert note.source == "telegram"
         assert note.is_cleaned is False
 
     def test_folder_record(self) -> None:

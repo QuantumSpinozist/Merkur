@@ -6,14 +6,14 @@ This file is the source of truth for Claude when working on this codebase. Read 
 
 ## Project overview
 
-**Merkur** is a personal knowledge OS: a markdown note-taking app with folder organisation, an AI cleanup/sorting layer, and a WhatsApp bot as the ambient capture interface. Built for a single user (the owner), self-hosted, designed to be cheap to run.
+**Merkur** is a personal knowledge OS: a markdown note-taking app with folder organisation, an AI cleanup/sorting layer, and a Telegram bot as the ambient capture interface. Built for a single user (the owner), self-hosted, designed to be cheap to run.
 
 The name comes from the German word "merken" (to notice, to remember) — fitting for a tool whose job is to remember things for you.
 
 **Core philosophy:**
 - Capture first, organise later — raw input should be frictionless
 - AI does the cleaning and sorting, not the user
-- WhatsApp is the primary mobile input surface; the web app is for reading and editing
+- Telegram is the primary mobile input surface; the web app is for reading and editing
 - Every feature should work without the AI layer (graceful degradation)
 
 ---
@@ -25,7 +25,7 @@ Merkur is split into two services that share one Supabase database. They are dec
 ```
 merkur/
 ├── merkur-web/              # Next.js frontend + note CRUD (TypeScript)
-├── merkur-brain/            # FastAPI backend: WhatsApp webhook + AI agents (Python)
+├── merkur-brain/            # FastAPI backend: Telegram webhook + AI agents (Python)
 ├── supabase/
 │   └── migrations/          # Shared SQL migrations (run once, owned by no single service)
 ├── .pre-commit-config.yaml  # Pre-commit hook definitions (all hooks)
@@ -49,13 +49,13 @@ Only build what is listed under MVP scope. Do not implement extension features u
 - [ ] Folder system (create, rename, delete, nest one level deep) — `merkur-web`
 - [ ] Note CRUD (create, read, update, delete, move between folders) — `merkur-web`
 - [ ] Basic auth (single user, magic link via Supabase) — `merkur-web`
-- [ ] WhatsApp webhook receiver (inbound messages only) — `merkur-brain`
-- [ ] Intake agent: parse WhatsApp message → create note with folder + title — `merkur-brain`
+- [ ] Telegram webhook receiver (inbound messages only) — `merkur-brain`
+- [ ] Intake agent: parse Telegram message → create note with folder + title — `merkur-brain`
 - [ ] Cleanup agent: reformat raw note content into clean markdown — `merkur-brain`
 
 ### Planned extensions (do not build yet)
-- **Todos & habits:** todo lists, recurring habits, cross-off via WhatsApp, reminders — `merkur-brain`
-- **Proactive reminders:** agent-initiated WhatsApp messages on a schedule — `merkur-brain`
+- **Todos & habits:** todo lists, recurring habits, cross-off via Telegram, reminders — `merkur-brain`
+- **Proactive reminders:** agent-initiated Telegram messages on a schedule — `merkur-brain`
 - **Todo queries:** ask agent "what are my todos for today?" — `merkur-brain`
 - **Calendar integration:** Google Calendar read/write — `merkur-brain`
 - **Mobile app:** React Native or PWA enhancements — `merkur-web`
@@ -84,7 +84,7 @@ Only build what is listed under MVP scope. Do not implement extension features u
 | Framework | FastAPI | Async, clean, minimal |
 | Database client | `supabase-py` | Talks to same Supabase project |
 | AI | `anthropic` Python SDK | All AI calls live here |
-| WhatsApp | Meta WhatsApp Cloud API | Handled entirely in this service |
+| Telegram | Telegram Bot API | Handled entirely in this service |
 | Server | Uvicorn | Via Railway or Fly.io (~$5/mo) |
 | Task queue | `asyncio` background tasks | Sufficient for MVP; swap for Celery later if needed |
 
@@ -150,7 +150,7 @@ merkur-web/
 ```
 
 **Rules for merkur-web:**
-- No AI calls. No Anthropic SDK. No WhatsApp calls. Ever.
+- No AI calls. No Anthropic SDK. No Telegram calls. Ever.
 - All Supabase calls from server components or API routes only — never from client components.
 - `lib/types.ts` must stay in sync with the database schema.
 
@@ -161,19 +161,19 @@ merkur-brain/
 ├── app/
 │   ├── main.py                     # FastAPI app entry point
 │   ├── routers/
-│   │   └── whatsapp.py             # GET + POST /webhook/whatsapp
+│   │   └── telegram.py             # POST /webhook/telegram
 │   ├── agents/
-│   │   ├── intake_agent.py         # Parse WA message → note metadata
+│   │   ├── intake_agent.py         # Parse Telegram message → note metadata
 │   │   └── cleanup_agent.py        # Reformat raw content → clean markdown
 │   ├── services/
-│   │   ├── whatsapp.py             # Outbound WhatsApp message sender
+│   │   ├── telegram.py             # Outbound Telegram message sender
 │   │   └── notes.py                # Supabase note/folder read+write helpers
 │   └── models.py                   # Pydantic models (request/response shapes)
 ├── tests/
 │   ├── unit/                       # Run in pre-commit (mocked, fast)
 │   │   ├── test_intake_agent.py
 │   │   ├── test_cleanup_agent.py
-│   │   ├── test_whatsapp_verify.py
+│   │   ├── test_telegram_webhook.py
 │   │   └── test_models.py
 │   └── integration/                # CI only — requires live Supabase + APIs
 │       └── test_webhook_flow.py
@@ -210,7 +210,7 @@ create table notes (
   title text not null default 'Untitled',
   content text,                          -- raw markdown
   folder_id uuid references folders(id) on delete set null,
-  source text check (source in ('web', 'whatsapp')) default 'web',
+  source text check (source in ('web', 'telegram')) default 'web',
   is_cleaned boolean default false,      -- whether cleanup agent has run
   created_at timestamptz default now(),
   updated_at timestamptz default now()
@@ -232,7 +232,7 @@ All agents follow the same pattern: a function that takes a Pydantic model and r
 
 ### Intake agent (`agents/intake_agent.py`)
 
-Called when a WhatsApp message arrives. Parses the raw message and maps it to a folder.
+Called when a Telegram message arrives. Parses the raw message and maps it to a folder.
 
 **Input model:**
 ```python
@@ -288,20 +288,23 @@ class CleanupOutput(BaseModel):
 
 ---
 
-## WhatsApp integration (merkur-brain)
+## Telegram integration (merkur-brain)
 
-### Webhook verification (`GET /webhook/whatsapp`)
-Meta sends `hub.challenge` on first setup. Verify against `WHATSAPP_VERIFY_TOKEN` env var and return the challenge as plain text.
+### Webhook registration
+No challenge handshake needed. Register the webhook once via the Bot API:
+```
+https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook?url=https://merkur-brain.railway.app/webhook/telegram&secret_token={TELEGRAM_WEBHOOK_SECRET}
+```
 
-### Message handling (`POST /webhook/whatsapp`)
-1. Verify request signature using `X-Hub-Signature-256` and `WHATSAPP_APP_SECRET`
-2. Extract message text and sender phone number from Meta's payload
-3. Ignore non-text messages (images, audio, etc.) for MVP — log and return `200 OK`
+### Message handling (`POST /webhook/telegram`)
+1. Verify `X-Telegram-Bot-Api-Secret-Token` header if `TELEGRAM_WEBHOOK_SECRET` is set
+2. Extract message text and `chat.id` from the Telegram Update payload
+3. Ignore non-text messages (photos, stickers, etc.) for MVP — log and return `200 OK`
 4. Call intake agent → write note to Supabase via `services/notes.py`
 5. Fire cleanup agent as a FastAPI `BackgroundTask` — non-blocking
-6. Send confirmation reply via `services/whatsapp.py`
+6. Send confirmation reply via `services/telegram.py`
 
-**Always return HTTP 200 to Meta**, even on errors — otherwise Meta will retry aggressively.
+**Always return HTTP 200**, even on errors — otherwise Telegram will retry aggressively.
 
 **Confirmation message format:**
 ```
@@ -309,8 +312,8 @@ Meta sends `hub.challenge` on first setup. Verify against `WHATSAPP_VERIFY_TOKEN
 ```
 If folder is inbox/null: `[Merkur] Saved to Inbox: "[Note Title]"`
 
-### Outbound messages (`services/whatsapp.py`)
-Thin wrapper around the WhatsApp Cloud API `/messages` endpoint. Accepts `to: str, text: str`. Used only for confirmations in MVP.
+### Outbound messages (`services/telegram.py`)
+Thin wrapper around `POST /sendMessage`. Accepts `chat_id: int, text: str`. Used only for confirmations in MVP.
 
 ---
 
@@ -338,11 +341,9 @@ SUPABASE_SERVICE_ROLE_KEY=        # brain always uses service role
 # Anthropic
 ANTHROPIC_API_KEY=
 
-# WhatsApp
-WHATSAPP_PHONE_NUMBER_ID=
-WHATSAPP_ACCESS_TOKEN=
-WHATSAPP_VERIFY_TOKEN=            # any string you choose
-WHATSAPP_APP_SECRET=              # for signature verification
+# Telegram
+TELEGRAM_BOT_TOKEN=               # from @BotFather
+TELEGRAM_WEBHOOK_SECRET=          # any string you choose (optional but recommended)
 
 # App
 BRAIN_ENV=development             # or production
@@ -356,13 +357,13 @@ Never commit either env file. `ANTHROPIC_API_KEY` never appears in `merkur-web` 
 
 1. **Two services, one database.** `merkur-web` and `merkur-brain` are decoupled. They share state only through Supabase. Neither calls the other over HTTP.
 
-2. **Python for logic, TypeScript for UI.** All AI, WhatsApp, scheduling, and data processing lives in `merkur-brain`. All rendering, editing, and user interaction lives in `merkur-web`. When in doubt about where a feature belongs: if it involves AI or a third-party integration, it's `merkur-brain`; if it involves displaying or editing, it's `merkur-web`.
+2. **Python for logic, TypeScript for UI.** All AI, Telegram, scheduling, and data processing lives in `merkur-brain`. All rendering, editing, and user interaction lives in `merkur-web`. When in doubt about where a feature belongs: if it involves AI or a third-party integration, it's `merkur-brain`; if it involves displaying or editing, it's `merkur-web`.
 
-3. **Agent interface is stable.** Agents take Pydantic models and return Pydantic models. When new agents are added (todo agent, reminder agent), they follow the same pattern in `agents/`. No agent has side effects — side effects (writing to DB, sending WA messages) happen in the router or service layer that calls the agent.
+3. **Agent interface is stable.** Agents take Pydantic models and return Pydantic models. When new agents are added (todo agent, reminder agent), they follow the same pattern in `agents/`. No agent has side effects — side effects (writing to DB, sending Telegram messages) happen in the router or service layer that calls the agent.
 
 4. **Notes are the core primitive.** Todos, habits, and calendar events will all attach to notes via foreign keys. Do not design features that bypass the notes table.
 
-5. **WhatsApp handler is a router, not a monolith.** As features grow, the webhook handler should classify the message type first (`note`, `todo_completion`, `query`, etc.), then delegate to the right handler. Keep this pattern from day one even though MVP only has one message type.
+5. **Telegram handler is a router, not a monolith.** As features grow, the webhook handler should classify the message type first (`note`, `todo_completion`, `query`, etc.), then delegate to the right handler. Keep this pattern from day one even though MVP only has one message type.
 
 6. **AI is always optional.** Every user action must work without AI. AI runs asynchronously and enhances — it never blocks a response.
 
@@ -423,9 +424,9 @@ pre-commit install --hook-type commit-msg   # for commitlint
 
 ### Test scope in pre-commit
 
-Pre-commit runs a **fast subset** of tests only — the full suite runs in CI. The rule: if a test requires a live network call, a real Supabase connection, or the WhatsApp API, it is **not** a pre-commit test.
+Pre-commit runs a **fast subset** of tests only — the full suite runs in CI. The rule: if a test requires a live network call, a real Supabase connection, or the Telegram API, it is **not** a pre-commit test.
 
-**merkur-brain (pytest):** only tests in `tests/unit/` run. These test agent parsing logic, Pydantic model validation, WhatsApp signature verification, and message classification. All external calls (Anthropic API, Supabase) are mocked with `pytest-mock`.
+**merkur-brain (pytest):** only tests in `tests/unit/` run. These test agent parsing logic, Pydantic model validation, Telegram webhook handling, and message classification. All external calls (Anthropic API, Supabase) are mocked with `pytest-mock`.
 
 **merkur-web (jest):** only tests in `__tests__/unit/` run. These test utility functions, Zod schemas, and any pure logic. No tests that mount React components with real data or call API routes.
 
@@ -435,12 +436,12 @@ Integration and end-to-end tests (`tests/integration/`, `cypress/`) run in CI on
 
 All commit messages must follow the format: `type(scope): description`
 
-**Types:** `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `perf`  
+**Types:** `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `perf`
 **Scopes:** `web`, `brain`, `db`, `infra` (optional but encouraged)
 
 Examples:
 ```
-feat(brain): add intake agent for whatsapp messages
+feat(brain): add intake agent for telegram messages
 fix(web): correct folder delete not refreshing sidebar
 chore(db): add 002 migration for is_cleaned column
 docs: update running locally section in CLAUDE.md
@@ -494,13 +495,13 @@ cp .env.example .env         # fill in all keys
 uvicorn app.main:app --reload --port 8000
 ```
 
-### WhatsApp webhook (local testing)
-Use ngrok to expose `merkur-brain` locally:
+### Telegram webhook (local testing)
+Use ngrok to expose `merkur-brain` locally, then register the webhook:
 ```bash
 ngrok http 8000
-# Set webhook URL in Meta Developer Console to:
-# https://<your-ngrok-id>.ngrok.io/webhook/whatsapp
+# Register webhook with Telegram:
+# curl "https://api.telegram.org/bot{TOKEN}/setWebhook?url=https://<ngrok-id>.ngrok.io/webhook/telegram&secret_token={SECRET}"
 #
 # Production webhook URL:
-# https://merkur-brain.railway.app/webhook/whatsapp
+# https://merkur-brain.railway.app/webhook/telegram
 ```

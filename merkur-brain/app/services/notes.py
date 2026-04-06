@@ -31,7 +31,7 @@ async def create_note(
     title: str,
     content: str,
     folder_id: str | None,
-    source: str = "whatsapp",
+    source: str = "telegram",
 ) -> NoteRecord:
     """Insert a new note and return the created record."""
     client = get_client()
