@@ -4,6 +4,7 @@ import { useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
+import { Markdown } from 'tiptap-markdown'
 import type { Folder, Note } from '@/lib/types'
 
 type Props = {
@@ -39,11 +40,12 @@ export default function NoteEditor({ note, folders }: Props) {
   )
 
   const editor = useEditor({
-    extensions: [StarterKit],
+    extensions: [StarterKit, Markdown],
     content: note.content ?? '',
     immediatelyRender: false,
     onUpdate({ editor }) {
-      debouncedSave({ content: editor.getHTML() })
+      const md = (editor.storage as unknown as { markdown: { getMarkdown: () => string } }).markdown
+      debouncedSave({ content: md.getMarkdown() })
     },
   })
 
