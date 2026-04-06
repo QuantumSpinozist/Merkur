@@ -5,14 +5,16 @@ import { useRouter } from 'next/navigation'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { Markdown } from 'tiptap-markdown'
-import type { Folder, Note } from '@/lib/types'
+import TodoList from '@/components/todos/TodoList'
+import type { Folder, Note, Todo } from '@/lib/types'
 
 type Props = {
   note: Note
   folders: Folder[]
+  initialTodos: Todo[]
 }
 
-export default function NoteEditor({ note, folders }: Props) {
+export default function NoteEditor({ note, folders, initialTodos }: Props) {
   const router = useRouter()
   const [title, setTitle] = useState(note.title)
   const [folderId, setFolderId] = useState<string | null>(note.folder_id)
@@ -117,6 +119,8 @@ export default function NoteEditor({ note, folders }: Props) {
       <div className="prose prose-stone max-w-none font-serif">
         <EditorContent editor={editor} />
       </div>
+
+      <TodoList noteId={note.id} initialTodos={initialTodos} />
     </div>
   )
 }

@@ -31,7 +31,16 @@ async def send_message(chat_id: int, text: str) -> None:
 async def set_commands() -> None:
     """Register bot commands so they appear in the Telegram / menu."""
     commands = [
-        {"command": "note", "description": "Save a note: /note <your text>"},
+        {"command": "note", "description": "Save a note: /note <text>"},
+        {
+            "command": "todo",
+            "description": "Add a todo: /todo <text> [due:DATE] [repeat:…] [note:…]",
+        },
+        {"command": "done", "description": "Check off a todo: /done <number>"},
+        {
+            "command": "remind",
+            "description": "Set daily reminder: /remind HH:MM | off | status",
+        },
         {"command": "help", "description": "Show available commands"},
     ]
     async with httpx.AsyncClient() as client:

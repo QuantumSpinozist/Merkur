@@ -91,3 +91,30 @@ class FolderRecord(BaseModel):
     id: str
     name: str
     parent_id: str | None
+
+
+# ---------------------------------------------------------------------------
+# Todos
+# ---------------------------------------------------------------------------
+
+
+class TodoRecord(BaseModel):
+    id: str
+    note_id: str
+    text: str
+    done: bool
+    done_at: str | None
+    recurrence: str | None
+    due_date: str | None
+    created_at: str
+
+
+class PendingTodo(BaseModel):
+    """A todo enriched with its note and folder context, for reminder messages."""
+
+    id: str
+    text: str
+    recurrence: str | None
+    due_date: str | None
+    note_title: str
+    folder_name: str | None

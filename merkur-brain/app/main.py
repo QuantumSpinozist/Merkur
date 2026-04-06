@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 
 from app.routers import telegram
+from app.services import scheduler as scheduler_service
 from app.services.telegram import set_commands
 
 load_dotenv()
@@ -26,7 +27,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await set_commands()
     except Exception as exc:
         logger.warning("Could not register bot commands on startup: %s", exc)
+    try:
+        await scheduler_service.start()
+    except Exception as exc:
+        logger.warning("Could not start scheduler: %s", exc)
     yield
+    await scheduler_service.stop()
 
 
 app = FastAPI(title="merkur-brain", version="0.1.0", lifespan=lifespan)

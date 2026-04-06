@@ -2,6 +2,8 @@
 
 import logging
 import os
+import re
+from datetime import date
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
@@ -9,6 +11,8 @@ from app.agents.cleanup_agent import run_cleanup_agent
 from app.agents.intake_agent import run_intake_agent
 from app.models import CleanupInput, IntakeInput, TelegramMessage, TelegramUpdate
 from app.services import notes as notes_service
+from app.services import scheduler as scheduler_service
+from app.services import settings as settings_service
 from app.services import telegram as tg_service
 
 logger = logging.getLogger(__name__)
@@ -21,10 +25,17 @@ HELP_TEXT = """\
 Just send me any message and I'll save it as a note.
 
 *Commands:*
-/note <text> — explicitly save a note
-/help — show this message
-
-I'll automatically pick the right folder and clean up the formatting for you.\
+/note <text> — save a note (optional: title:"My Title")
+/todo <text> — add a todo
+  Optional flags: due:YYYY-MM-DD repeat:daily|weekly|monthly note:"Title"
+  Folder scope: note:"Folder/Title" or note:Folder/Title
+  Example: /todo Submit report due:2024-04-10 note:"Work/Meeting Notes"
+/todo list — list all pending todos (numbered)
+/done <number> — check off todo by its number in the list
+/remind HH:MM — set daily reminder time (e.g. /remind 09:00)
+/remind off — disable reminders
+/remind status — show current reminder setting
+/help — show this message\
 """
 
 WELCOME_TEXT = """\
@@ -65,6 +76,11 @@ async def receive_update(request: Request, background_tasks: BackgroundTasks) ->
         await _handle_command(text, chat_id, background_tasks)
         return {"ok": True}
 
+    # Store chat_id so the scheduler knows where to send reminders
+    background_tasks.add_task(
+        settings_service.set_setting, "reminder_chat_id", str(chat_id)
+    )
+
     # --- Plain text → save as note ---
     await _save_note(text, chat_id, background_tasks)
     return {"ok": True}
@@ -96,10 +112,22 @@ async def _handle_command(
             background_tasks.add_task(
                 tg_service.send_message,
                 chat_id=chat_id,
-                text="Usage: /note <your text>",
+                text='Usage: /note <text> [title:"My Title"]',
             )
         else:
-            await _save_note(arg.strip(), chat_id, background_tasks)
+            content, forced_title = _parse_note_flags(arg.strip())
+            await _save_note(
+                content, chat_id, background_tasks, forced_title=forced_title
+            )
+
+    elif command == "/todo":
+        await _handle_todo(arg.strip(), chat_id, background_tasks)
+
+    elif command == "/remind":
+        await _handle_remind(arg.strip(), chat_id, background_tasks)
+
+    elif command == "/done":
+        await _handle_done(arg.strip(), chat_id, background_tasks)
 
     else:
         background_tasks.add_task(
@@ -107,8 +135,215 @@ async def _handle_command(
         )
 
 
+async def _handle_todo(
+    arg: str, chat_id: int, background_tasks: BackgroundTasks
+) -> None:
+    """Handle /todo command: create a todo or list pending todos."""
+    if arg.lower() == "list":
+        await _send_todo_list(chat_id, background_tasks)
+        return
+
+    if not arg:
+        background_tasks.add_task(
+            tg_service.send_message,
+            chat_id=chat_id,
+            text="Usage: /todo <text> [due:YYYY-MM-DD] [repeat:daily|weekly|monthly]",
+        )
+        return
+
+    todo_text, due_date, recurrence, note_query = _parse_todo_flags(arg)
+    if not todo_text:
+        background_tasks.add_task(
+            tg_service.send_message,
+            chat_id=chat_id,
+            text="Please provide some text for the todo.",
+        )
+        return
+
+    try:
+        if note_query:
+            if "/" in note_query:
+                folder_part, _, title_part = note_query.partition("/")
+                note = await notes_service.find_note_by_title(
+                    title_part.strip(), folder_query=folder_part.strip()
+                )
+            else:
+                note = await notes_service.find_note_by_title(note_query)
+            if note is None:
+                background_tasks.add_task(
+                    tg_service.send_message,
+                    chat_id=chat_id,
+                    text=(
+                        f'⚠️ No note found matching "{note_query}". '
+                        "Check the title and try again."
+                    ),
+                )
+                return
+        else:
+            note = await notes_service.get_or_create_telegram_todos_note()
+
+        todo = await notes_service.create_todo(
+            note_id=note.id,
+            text=todo_text,
+            due_date=due_date,
+            recurrence=recurrence,
+        )
+    except Exception as exc:
+        logger.error("Failed to create todo: %s", exc)
+        background_tasks.add_task(
+            tg_service.send_message,
+            chat_id=chat_id,
+            text="⚠️ Something went wrong saving the todo. Please try again.",
+        )
+        return
+
+    parts = [f'✅ Added to *{note.title}*: "{todo.text}"']
+    if todo.due_date:
+        parts.append(f"due {todo.due_date}")
+    if todo.recurrence:
+        parts.append(f"repeats {todo.recurrence}")
+    background_tasks.add_task(
+        tg_service.send_message, chat_id=chat_id, text=" — ".join(parts)
+    )
+
+
+async def _handle_done(
+    arg: str, chat_id: int, background_tasks: BackgroundTasks
+) -> None:
+    """Handle /done <number> — check off the Nth pending todo."""
+    if not arg.isdigit():
+        background_tasks.add_task(
+            tg_service.send_message,
+            chat_id=chat_id,
+            text="Usage: /done <number>  (use /todo list to see the numbers)",
+        )
+        return
+
+    index = int(arg)
+    try:
+        todos = await notes_service.list_pending_todos()
+    except Exception as exc:
+        logger.error("Failed to fetch todos for /done: %s", exc)
+        background_tasks.add_task(
+            tg_service.send_message, chat_id=chat_id, text="⚠️ Could not load todos."
+        )
+        return
+
+    if index < 1 or index > len(todos):
+        background_tasks.add_task(
+            tg_service.send_message,
+            chat_id=chat_id,
+            text=f"No todo #{index}. Use /todo list to see the current list.",
+        )
+        return
+
+    todo = todos[index - 1]
+    try:
+        await notes_service.mark_todo_done(todo.id)
+    except Exception as exc:
+        logger.error("Failed to mark todo %s done: %s", todo.id, exc)
+        background_tasks.add_task(
+            tg_service.send_message,
+            chat_id=chat_id,
+            text="⚠️ Something went wrong. Please try again.",
+        )
+        return
+
+    msg = f'✅ Done: "{todo.text}"'
+    if todo.recurrence:
+        msg += f"\n_Repeats {todo.recurrence} — will reset automatically._"
+    background_tasks.add_task(tg_service.send_message, chat_id=chat_id, text=msg)
+
+
+async def _send_todo_list(chat_id: int, background_tasks: BackgroundTasks) -> None:
+    try:
+        todos = await notes_service.list_pending_todos()
+    except Exception as exc:
+        logger.error("Failed to fetch todos: %s", exc)
+        background_tasks.add_task(
+            tg_service.send_message, chat_id=chat_id, text="⚠️ Could not load todos."
+        )
+        return
+
+    if not todos:
+        background_tasks.add_task(
+            tg_service.send_message, chat_id=chat_id, text="🎉 No pending todos!"
+        )
+        return
+
+    today = date.today()
+    lines = [f"📋 *{len(todos)} pending todo{'s' if len(todos) != 1 else ''}:*\n"]
+    current_group: str | None = None
+
+    for i, todo in enumerate(todos, start=1):
+        group = f"{todo.folder_name or 'Inbox'} / {todo.note_title}"
+        if group != current_group:
+            lines.append(f"*{group}*")
+            current_group = group
+        due = _due_label(todo.due_date, today)
+        recurrence = f" _{todo.recurrence}_" if todo.recurrence else ""
+        lines.append(f"  {i}. {todo.text}{due}{recurrence}")
+
+    lines.append("\n_Reply /done <number> to check one off._")
+    background_tasks.add_task(
+        tg_service.send_message, chat_id=chat_id, text="\n".join(lines)
+    )
+
+
+async def _handle_remind(
+    arg: str, chat_id: int, background_tasks: BackgroundTasks
+) -> None:
+    """Handle /remind command: configure or disable the daily reminder."""
+    # Store the chat id for reminders
+    await settings_service.set_setting("reminder_chat_id", str(chat_id))
+
+    if arg.lower() == "off":
+        await settings_service.set_setting("reminder_enabled", "false")
+        scheduler_service.reschedule(None)
+        background_tasks.add_task(
+            tg_service.send_message,
+            chat_id=chat_id,
+            text="🔕 Daily reminders disabled.",
+        )
+        return
+
+    if arg.lower() == "status":
+        time_str = await settings_service.get_setting("reminder_time") or os.getenv(
+            "REMINDER_TIME", "09:00"
+        )
+        enabled = (
+            await settings_service.get_setting("reminder_enabled") or "true"
+        ) == "true"
+        status = (
+            f"✅ Daily reminder at *{time_str}*" if enabled else "🔕 Reminders disabled"
+        )
+        background_tasks.add_task(tg_service.send_message, chat_id=chat_id, text=status)
+        return
+
+    # Expect HH:MM
+    if not re.fullmatch(r"\d{1,2}:\d{2}", arg):
+        background_tasks.add_task(
+            tg_service.send_message,
+            chat_id=chat_id,
+            text="Usage: /remind HH:MM | /remind off | /remind status",
+        )
+        return
+
+    await settings_service.set_setting("reminder_time", arg)
+    await settings_service.set_setting("reminder_enabled", "true")
+    scheduler_service.reschedule(arg)
+    background_tasks.add_task(
+        tg_service.send_message,
+        chat_id=chat_id,
+        text=f"⏰ Daily reminder set for *{arg}*.",
+    )
+
+
 async def _save_note(
-    text: str, chat_id: int, background_tasks: BackgroundTasks
+    text: str,
+    chat_id: int,
+    background_tasks: BackgroundTasks,
+    forced_title: str | None = None,
 ) -> None:
     """Run intake agent, persist note, schedule cleanup, send confirmation."""
     try:
@@ -120,7 +355,7 @@ async def _save_note(
         )
 
         note = await notes_service.create_note(
-            title=intake_output.title,
+            title=forced_title or intake_output.title,
             content=intake_output.content,
             folder_id=intake_output.folder_id,
         )
@@ -179,6 +414,70 @@ def _find_folder_name(folders: list[dict[str, str]], folder_id: str | None) -> s
         if f["id"] == folder_id:
             return f["name"]
     return "Inbox"
+
+
+def _parse_note_flags(text: str) -> tuple[str, str | None]:
+    """Extract optional title: flag from note text. Returns (content, title).
+
+    Supports: title:"My Title" or title:SingleWord
+    """
+    for pattern in (r'\btitle:"([^"]+)"', r"\btitle:(\S+)"):
+        m = re.search(pattern, text)
+        if m:
+            title = m.group(1).strip()
+            content = (text[: m.start()] + text[m.end() :]).strip()
+            return content or text.strip(), title or None
+    return text.strip(), None
+
+
+def _parse_todo_flags(
+    text: str,
+) -> tuple[str, str | None, str | None, str | None]:
+    """Extract flags. Returns (clean_text, due_date, recurrence, note_query).
+
+    Supported flags:
+      due:YYYY-MM-DD
+      repeat:daily|weekly|monthly
+      note:"Note Title" or note:SingleWord
+    """
+    due_match = re.search(r"\bdue:(\S+)", text)
+    repeat_match = re.search(r"\brepeat:(\S+)", text)
+    note_match = re.search(r'\bnote:"([^"]+)"', text) or re.search(
+        r"\bnote:(\S+)", text
+    )
+
+    due_date = due_match.group(1) if due_match else None
+    recurrence = repeat_match.group(1).lower() if repeat_match else None
+    if recurrence not in ("daily", "weekly", "monthly"):
+        recurrence = None
+    note_query = note_match.group(1).strip() if note_match else None
+
+    # Remove matched flag spans from the text (highest index first to preserve offsets)
+    spans = sorted(
+        [m.span() for m in [due_match, repeat_match, note_match] if m],
+        reverse=True,
+    )
+    clean = text
+    for start, end in spans:
+        clean = clean[:start] + clean[end:]
+    return clean.strip(), due_date, recurrence, note_query
+
+
+def _due_label(due_date: str | None, today: date) -> str:
+    if not due_date:
+        return ""
+    try:
+        d = date.fromisoformat(due_date)
+    except ValueError:
+        return ""
+    delta = (d - today).days
+    if delta < 0:
+        return " _(overdue!)_"
+    if delta == 0:
+        return " _(due today)_"
+    if delta == 1:
+        return " _(due tomorrow)_"
+    return f" _(due {d.strftime('%b %-d')})_"
 
 
 async def _run_cleanup(note_id: str, raw_content: str, title: str) -> None:
