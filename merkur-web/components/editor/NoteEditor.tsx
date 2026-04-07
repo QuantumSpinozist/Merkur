@@ -20,15 +20,25 @@ export default function NoteEditor({ note, folders, initialTodos }: Props) {
   const [folderId, setFolderId] = useState<string | null>(note.folder_id)
   const [lastSaved, setLastSaved] = useState<Date | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const saveAbortRef = useRef<AbortController | null>(null)
 
   const save = useCallback(
     async (updates: { title?: string; content?: string; folder_id?: string | null }) => {
-      await fetch('/api/notes', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: note.id, ...updates }),
-      })
-      setLastSaved(new Date())
+      saveAbortRef.current?.abort()
+      const controller = new AbortController()
+      saveAbortRef.current = controller
+
+      try {
+        const res = await fetch('/api/notes', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: note.id, ...updates }),
+          signal: controller.signal,
+        })
+        if (res.ok) setLastSaved(new Date())
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') return
+      }
     },
     [note.id]
   )
