@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
@@ -18,6 +18,10 @@ type Props = {
   initialTodos: Todo[]
 }
 
+const MIN_CONTENT_WIDTH = 320
+const MAX_CONTENT_WIDTH = 1400
+const DEFAULT_CONTENT_WIDTH = 672 // equivalent to max-w-2xl
+
 export default function NoteEditor({ note, folders, initialTodos }: Props) {
   const router = useRouter()
   const [title, setTitle] = useState(note.title)
@@ -26,6 +30,60 @@ export default function NoteEditor({ note, folders, initialTodos }: Props) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const saveAbortRef = useRef<AbortController | null>(null)
 
+  // Content width drag
+  const [contentWidth, setContentWidth] = useState(DEFAULT_CONTENT_WIDTH)
+  const [isResizing, setIsResizing] = useState(false)
+  const resizeDragging = useRef(false)
+  const resizeStartX = useRef(0)
+  const resizeStartWidth = useRef(0)
+
+  useEffect(() => {
+    const saved = localStorage.getItem('note-content-width')
+    if (saved) setContentWidth(parseInt(saved))
+  }, [])
+
+  useEffect(() => {
+    localStorage.setItem('note-content-width', String(contentWidth))
+  }, [contentWidth])
+
+  const startResizeDrag = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault()
+      resizeDragging.current = true
+      setIsResizing(true)
+      resizeStartX.current = e.clientX
+      resizeStartWidth.current = contentWidth
+      document.body.style.cursor = 'col-resize'
+      document.body.style.userSelect = 'none'
+    },
+    [contentWidth]
+  )
+
+  useEffect(() => {
+    function onMove(e: MouseEvent) {
+      if (!resizeDragging.current) return
+      // Content is centered, so dragging right by N pixels widens by 2×N
+      const delta = (e.clientX - resizeStartX.current) * 2
+      setContentWidth(
+        Math.max(MIN_CONTENT_WIDTH, Math.min(MAX_CONTENT_WIDTH, resizeStartWidth.current + delta))
+      )
+    }
+    function onUp() {
+      if (!resizeDragging.current) return
+      resizeDragging.current = false
+      setIsResizing(false)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [])
+
+  // Note saving
   const save = useCallback(
     async (updates: { title?: string; content?: string; folder_id?: string | null }) => {
       saveAbortRef.current?.abort()
@@ -96,52 +154,67 @@ export default function NoteEditor({ note, folders, initialTodos }: Props) {
   }
 
   return (
-    <div className="max-w-2xl mx-auto p-8">
-      {/* Toolbar */}
-      <div className="flex items-center justify-between mb-4 text-sm text-stone-400 dark:text-stone-500">
-        <select
-          value={folderId ?? ''}
-          onChange={(e) => void handleFolderChange(e.target.value)}
-          className="bg-transparent border-none outline-none cursor-pointer hover:text-stone-600 text-sm"
-        >
-          <option value="">Inbox (no folder)</option>
-          {folders.map((f) => (
-            <option key={f.id} value={f.id}>
-              {f.name}
-            </option>
-          ))}
-        </select>
-
-        <div className="flex items-center gap-4">
-          {lastSaved && (
-            <span>
-              Saved {lastSaved.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </span>
-          )}
-          <button
-            onClick={() => void deleteNote()}
-            className="hover:text-red-500 transition-colors"
+    <div className="flex justify-center min-h-full py-8">
+      <div
+        className="relative w-full px-8"
+        style={{
+          maxWidth: contentWidth,
+          transition: isResizing ? 'none' : 'max-width 0ms',
+        }}
+      >
+        {/* Toolbar */}
+        <div className="flex items-center justify-between mb-4 text-sm text-stone-400 dark:text-stone-500">
+          <select
+            value={folderId ?? ''}
+            onChange={(e) => void handleFolderChange(e.target.value)}
+            className="bg-transparent border-none outline-none cursor-pointer hover:text-stone-600 text-sm"
           >
-            Delete
-          </button>
+            <option value="">Inbox (no folder)</option>
+            {folders.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name}
+              </option>
+            ))}
+          </select>
+
+          <div className="flex items-center gap-4">
+            {lastSaved && (
+              <span>
+                Saved {lastSaved.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
+            <button
+              onClick={() => void deleteNote()}
+              className="hover:text-red-500 transition-colors"
+            >
+              Delete
+            </button>
+          </div>
         </div>
+
+        {/* Title */}
+        <input
+          type="text"
+          value={title}
+          onChange={(e) => handleTitleChange(e.target.value)}
+          className="w-full text-3xl font-serif font-semibold text-stone-800 dark:text-stone-100 bg-transparent border-none outline-none mb-6 placeholder:text-stone-300 dark:placeholder:text-stone-600"
+          placeholder="Untitled"
+        />
+
+        {/* Editor */}
+        <div className="prose prose-stone dark:prose-invert max-w-none font-serif">
+          <EditorContent editor={editor} />
+        </div>
+
+        <TodoList noteId={note.id} initialTodos={initialTodos} />
+
+        {/* Right-edge drag handle */}
+        <div
+          className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-amber-400 dark:hover:bg-amber-600 transition-colors"
+          onMouseDown={startResizeDrag}
+          title="Drag to resize"
+        />
       </div>
-
-      {/* Title */}
-      <input
-        type="text"
-        value={title}
-        onChange={(e) => handleTitleChange(e.target.value)}
-        className="w-full text-3xl font-serif font-semibold text-stone-800 dark:text-stone-100 bg-transparent border-none outline-none mb-6 placeholder:text-stone-300 dark:placeholder:text-stone-600"
-        placeholder="Untitled"
-      />
-
-      {/* Editor */}
-      <div className="prose prose-stone dark:prose-invert max-w-none font-serif">
-        <EditorContent editor={editor} />
-      </div>
-
-      <TodoList noteId={note.id} initialTodos={initialTodos} />
     </div>
   )
 }
