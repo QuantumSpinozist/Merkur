@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI
 
-from app.routers import telegram
+from app.routers import cleanup, telegram
 from app.services import scheduler as scheduler_service
 from app.services.telegram import set_commands
 
@@ -38,6 +38,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 app = FastAPI(title="merkur-brain", version="0.1.0", lifespan=lifespan)
 
 app.include_router(telegram.router)
+app.include_router(cleanup.router)
 
 
 @app.get("/health")

@@ -27,6 +27,7 @@ export default function NoteEditor({ note, folders, initialTodos }: Props) {
   const [title, setTitle] = useState(note.title)
   const [folderId, setFolderId] = useState<string | null>(note.folder_id)
   const [lastSaved, setLastSaved] = useState<Date | null>(null)
+  const [cleaning, setCleaning] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const saveAbortRef = useRef<AbortController | null>(null)
 
@@ -141,6 +142,26 @@ export default function NoteEditor({ note, folders, initialTodos }: Props) {
     router.refresh()
   }
 
+  async function cleanupNote() {
+    if (!editor) return
+    const md = (editor.storage as unknown as { markdown: { getMarkdown: () => string } }).markdown
+    const currentContent = md.getMarkdown()
+    setCleaning(true)
+    try {
+      const res = await fetch('/api/cleanup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note_id: note.id, title, content: currentContent }),
+      })
+      if (!res.ok) return
+      const { cleaned_content } = (await res.json()) as { cleaned_content: string }
+      editor.commands.setContent(cleaned_content)
+      setLastSaved(new Date())
+    } finally {
+      setCleaning(false)
+    }
+  }
+
   async function deleteNote() {
     if (!confirm('Delete this note?')) return
     await fetch('/api/notes', {
@@ -182,6 +203,14 @@ export default function NoteEditor({ note, folders, initialTodos }: Props) {
                 Saved {lastSaved.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
             )}
+            <button
+              onClick={() => void cleanupNote()}
+              disabled={cleaning}
+              className="hover:text-amber-600 transition-colors disabled:opacity-40"
+              title="Reformat note with AI"
+            >
+              {cleaning ? 'Cleaning…' : 'Clean up'}
+            </button>
             <button
               onClick={() => void deleteNote()}
               className="hover:text-red-500 transition-colors"
