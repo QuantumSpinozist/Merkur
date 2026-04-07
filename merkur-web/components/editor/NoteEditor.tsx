@@ -8,8 +8,8 @@ import { Table } from '@tiptap/extension-table'
 import { TableCell } from '@tiptap/extension-table-cell'
 import { TableHeader } from '@tiptap/extension-table-header'
 import { TableRow } from '@tiptap/extension-table-row'
-import Image from '@tiptap/extension-image'
 import { Markdown } from 'tiptap-markdown'
+import { ResizableImage } from './ResizableImage'
 import TodoList from '@/components/todos/TodoList'
 import type { Folder, Note, Todo } from '@/lib/types'
 
@@ -124,7 +124,7 @@ export default function NoteEditor({ note, folders, initialTodos }: Props) {
       TableRow,
       TableHeader,
       TableCell,
-      Image.configure({ inline: false, allowBase64: false }),
+      ResizableImage.configure({ inline: false, allowBase64: false }),
       Markdown.configure({ transformPastedText: true }),
     ],
     content: note.content ?? '',
@@ -192,11 +192,16 @@ export default function NoteEditor({ note, folders, initialTodos }: Props) {
     const form = new FormData()
     form.append('file', resized)
     const res = await fetch('/api/upload', { method: 'POST', body: form })
+    const text = await res.text()
     if (!res.ok) {
-      const { error } = (await res.json()) as { error?: string }
-      throw new Error(error ?? `Upload failed (${res.status})`)
+      let message = `Upload failed (${res.status})`
+      try {
+        const json = JSON.parse(text) as { error?: string }
+        if (json.error) message = json.error
+      } catch {}
+      throw new Error(message)
     }
-    const { url } = (await res.json()) as { url: string }
+    const { url } = JSON.parse(text) as { url: string }
     return url
   }
 
