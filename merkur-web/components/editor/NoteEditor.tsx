@@ -4,6 +4,10 @@ import { useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
+import { Table } from '@tiptap/extension-table'
+import { TableCell } from '@tiptap/extension-table-cell'
+import { TableHeader } from '@tiptap/extension-table-header'
+import { TableRow } from '@tiptap/extension-table-row'
 import { Markdown } from 'tiptap-markdown'
 import TodoList from '@/components/todos/TodoList'
 import type { Folder, Note, Todo } from '@/lib/types'
@@ -52,7 +56,14 @@ export default function NoteEditor({ note, folders, initialTodos }: Props) {
   )
 
   const editor = useEditor({
-    extensions: [StarterKit, Markdown.configure({ transformPastedText: true })],
+    extensions: [
+      StarterKit,
+      Table.configure({ resizable: false }),
+      TableRow,
+      TableHeader,
+      TableCell,
+      Markdown.configure({ transformPastedText: true }),
+    ],
     content: note.content ?? '',
     immediatelyRender: false,
     onUpdate({ editor }) {
