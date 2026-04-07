@@ -30,6 +30,7 @@ export default function NoteEditor({ note, folders, initialTodos }: Props) {
   const [lastSaved, setLastSaved] = useState<Date | null>(null)
   const [cleaning, setCleaning] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const saveAbortRef = useRef<AbortController | null>(null)
@@ -191,7 +192,10 @@ export default function NoteEditor({ note, folders, initialTodos }: Props) {
     const form = new FormData()
     form.append('file', resized)
     const res = await fetch('/api/upload', { method: 'POST', body: form })
-    if (!res.ok) return null
+    if (!res.ok) {
+      const { error } = (await res.json()) as { error?: string }
+      throw new Error(error ?? `Upload failed (${res.status})`)
+    }
     const { url } = (await res.json()) as { url: string }
     return url
   }
@@ -201,11 +205,14 @@ export default function NoteEditor({ note, folders, initialTodos }: Props) {
     const images = files.filter((f) => f.type.startsWith('image/'))
     if (!images.length) return
     setUploading(true)
+    setUploadError(null)
     try {
       for (const file of images) {
         const url = await uploadImage(file)
         if (url) editor.chain().focus().setImage({ src: url }).run()
       }
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Upload failed')
     } finally {
       setUploading(false)
     }
@@ -253,6 +260,11 @@ export default function NoteEditor({ note, folders, initialTodos }: Props) {
           </select>
 
           <div className="flex items-center gap-4">
+            {uploadError && (
+              <span className="text-red-500" title={uploadError}>
+                ⚠ Image upload failed
+              </span>
+            )}
             {lastSaved && (
               <span>
                 Saved {lastSaved.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
