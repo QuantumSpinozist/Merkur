@@ -134,23 +134,27 @@ class IntentAction(BaseModel):
     """Structured action parsed from a free-text user instruction.
 
     action values:
-      create_note  — save a new note
-      append_note  — add content to an existing note
-      create_todo  — add a todo
-      update_todo  — edit an existing todo's text/due_date/recurrence
-      list_todos   — show pending todos
+      create_note   — save a new note
+      append_note   — add content to an existing note
+      query_note    — fetch and display a specific note
+      query_notes   — answer a natural-language question from notes/todos
+      create_todo   — add a todo
+      update_todo   — edit an existing todo's text/due_date/recurrence
+      list_todos    — show pending todos
       complete_todo — mark a todo done
       create_folder — create a folder
-      unknown      — could not understand; reply with `reply` field
+      unknown       — could not understand; reply with `reply` field
     """
 
     # action discriminator
     action: str
-    # create_note / append_note
+    # create_note / append_note / query_note
     note_title: str | None = None
     note_content: str | None = None  # full body for create; appended text for append
     note_folder_id: str | None = None
-    note_query: str | None = None  # "Folder/Note" query for append_note
+    note_query: str | None = None  # "Folder/Note" query for append_note / query_note
+    # query_notes
+    user_question: str | None = None  # verbatim question to answer from notes
     # create_todo / update_todo
     todo_text: str | None = None
     todo_note_query: str | None = None  # "Folder/Note" hint
@@ -163,3 +167,17 @@ class IntentAction(BaseModel):
     folder_parent_name: str | None = None
     # unknown fallback
     reply: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Query agent
+# ---------------------------------------------------------------------------
+
+
+class QueryInput(BaseModel):
+    question: str
+    notes: list[dict]  # [{"title": str, "content": str, "folder_name": str | None}]
+
+
+class QueryOutput(BaseModel):
+    answer: str

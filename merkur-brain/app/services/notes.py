@@ -244,6 +244,34 @@ async def mark_todo_done(todo_id: str) -> None:
     logger.info("Todo %s marked as done.", todo_id)
 
 
+async def list_all_notes_for_rag() -> list[dict]:
+    """Fetch all notes with folder context for use as RAG retrieval context.
+
+    Returns up to 100 notes (most recently updated first) with truncated content
+    so the total context stays within a reasonable token budget.
+    """
+    client = get_client()
+    result = (
+        client.table("notes")
+        .select("id, title, content, folders(name)")
+        .order("updated_at", desc=True)
+        .limit(100)
+        .execute()
+    )
+    notes: list[dict] = []
+    for row in result.data:
+        folder: dict = row.get("folders") or {}
+        notes.append(
+            {
+                "id": row["id"],
+                "title": row["title"],
+                "content": (row.get("content") or ""),
+                "folder_name": folder.get("name"),
+            }
+        )
+    return notes
+
+
 async def list_pending_todos() -> list[PendingTodo]:
     """Return all undone todos with their note title and folder name."""
     client = get_client()

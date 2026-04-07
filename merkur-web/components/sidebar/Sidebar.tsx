@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import FolderTree from './FolderTree'
 import TodosNavLink from './TodosNavLink'
 import DarkModeToggle from './DarkModeToggle'
+import AskBar from './AskBar'
 import type { Folder } from '@/lib/types'
 
 export default async function Sidebar() {
@@ -24,6 +25,9 @@ export default async function Sidebar() {
       </div>
       <div className="flex-1 overflow-y-auto p-2">
         <FolderTree folders={(folders ?? []) as Folder[]} />
+      </div>
+      <div className="border-t border-stone-200 dark:border-stone-700 pt-2">
+        <AskBar />
       </div>
       <div className="border-t border-stone-200 dark:border-stone-700 p-2 space-y-1">
         <TodosNavLink />

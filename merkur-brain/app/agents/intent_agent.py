@@ -21,12 +21,14 @@ The user sends free-text instructions and you return a JSON action object.
 Available actions:
 1. create_note   — create a brand-new note
 2. append_note   — add content to an existing note
-3. create_todo   — add a new todo item
-4. update_todo   — change the text, due date, or recurrence of an existing todo
-5. list_todos    — show all pending todos
-6. complete_todo — mark a todo as done
-7. create_folder — create a new folder
-8. unknown       — cannot determine intent
+3. query_note    — fetch and show a specific note by title
+4. query_notes   — answer a natural-language question from notes/todos
+5. create_todo   — add a new todo item
+6. update_todo   — change the text, due date, or recurrence of an existing todo
+7. list_todos    — show all pending todos
+8. complete_todo — mark a todo as done
+9. create_folder — create a new folder
+10. unknown      — cannot determine intent
 
 Output rules:
 - Return valid JSON only — no markdown fences, no explanation.
@@ -38,6 +40,13 @@ Output rules:
 append_note  (user says: "add to", "ergänze", "update my X note", "schreib in")
   "note_query":   "FolderName/NoteName" | "NoteName" — target note (required)
   "note_content": the text to append (required)
+
+query_note  (user says: "show me note X", "zeig mir notiz X", "öffne X", "what's in X")
+  "note_query": "FolderName/NoteName" | "NoteName" — note to fetch (required)
+
+query_notes  (user asks a question about their knowledge base: "was habe ich über X?",
+              "what are my ideas for Y?", "do I have notes on Z?", "summarise X")
+  "user_question": verbatim user question (required)
 
 create_note
   "note_title":     short title ≤ 60 chars (required)
@@ -69,6 +78,12 @@ unknown
 Available folders: {folders_json}
 
 --- Examples ---
+{{"action": "query_note", "note_query": "Projects/Coding ideas"}}
+{{"action": "query_note", "note_query": "Meeting Notes"}}
+{{"action": "query_notes", \
+"user_question": "What coding project ideas do I have?"}}
+{{"action": "query_notes", \
+"user_question": "Was habe ich über Machine Learning notiert?"}}
 {{"action": "append_note", "note_query": "Projects/Coding ideas", \
 "note_content": "- New idea: build a CLI pomodoro timer in Rust"}}
 {{"action": "append_note", "note_query": "Einkaufsliste", \

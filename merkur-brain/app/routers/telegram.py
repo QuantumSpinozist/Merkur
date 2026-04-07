@@ -10,10 +10,12 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from app.agents.cleanup_agent import run_cleanup_agent
 from app.agents.intake_agent import run_intake_agent
 from app.agents.intent_agent import run_intent_agent
+from app.agents.query_agent import run_query_agent
 from app.models import (
     CleanupInput,
     IntakeInput,
     IntentInput,
+    QueryInput,
     TelegramMessage,
     TelegramUpdate,
 )
@@ -33,6 +35,8 @@ Just send me any message and I'll save it as a note.
 
 *Commands:*
 /note <text> — save a note (optional: title:"My Title")
+/show <title> — fetch and display a note by title
+/ask <question> — ask a question answered from your notes
 /todo <text> — add a todo
   Optional flags: due:YYYY-MM-DD repeat:daily|weekly|monthly note:"Title"
   Folder scope: note:"Folder/Title" or note:Folder/Title
@@ -126,6 +130,26 @@ async def _handle_command(
             await _save_note(
                 content, chat_id, background_tasks, forced_title=forced_title
             )
+
+    elif command == "/show":
+        if not arg.strip():
+            background_tasks.add_task(
+                tg_service.send_message,
+                chat_id=chat_id,
+                text="Usage: /show <note title>",
+            )
+        else:
+            await _handle_show_note(arg.strip(), chat_id, background_tasks)
+
+    elif command == "/ask":
+        if not arg.strip():
+            background_tasks.add_task(
+                tg_service.send_message,
+                chat_id=chat_id,
+                text="Usage: /ask <your question>",
+            )
+        else:
+            await _handle_ask_notes(arg.strip(), chat_id, background_tasks)
 
     elif command == "/todo":
         await _handle_todo(arg.strip(), chat_id, background_tasks)
@@ -364,7 +388,21 @@ async def _handle_intent(
         )
         return
 
-    if action.action == "create_todo":
+    if action.action == "query_note":
+        if not action.note_query:
+            background_tasks.add_task(
+                tg_service.send_message,
+                chat_id=chat_id,
+                text="Which note? Please name it more specifically.",
+            )
+            return
+        await _handle_show_note(action.note_query, chat_id, background_tasks)
+
+    elif action.action == "query_notes":
+        question = action.user_question or text
+        await _handle_ask_notes(question, chat_id, background_tasks)
+
+    elif action.action == "create_todo":
         if not action.todo_text:
             background_tasks.add_task(
                 tg_service.send_message,
@@ -572,6 +610,57 @@ async def _handle_intent(
     else:
         reply = action.reply or "I didn't understand that. Try /help."
         background_tasks.add_task(tg_service.send_message, chat_id=chat_id, text=reply)
+
+
+async def _handle_show_note(
+    query: str, chat_id: int, background_tasks: BackgroundTasks
+) -> None:
+    """Fetch a note by title and send its content to the user."""
+    if "/" in query:
+        folder_part, _, title_part = query.partition("/")
+        note = await notes_service.find_note_by_title(
+            title_part.strip(), folder_query=folder_part.strip()
+        )
+    else:
+        note = await notes_service.find_note_by_title(query)
+
+    if note is None:
+        background_tasks.add_task(
+            tg_service.send_message,
+            chat_id=chat_id,
+            text=f'⚠️ No note found matching "{query}".',
+        )
+        return
+
+    content = note.content or "_(empty note)_"
+    # Telegram messages are capped at 4096 chars; truncate gracefully
+    header = f"📄 *{note.title}*\n\n"
+    limit = 4000 - len(header)
+    if len(content) > limit:
+        content = content[:limit] + "\n\n_… (truncated)_"
+    background_tasks.add_task(
+        tg_service.send_message, chat_id=chat_id, text=header + content
+    )
+
+
+async def _handle_ask_notes(
+    question: str, chat_id: int, background_tasks: BackgroundTasks
+) -> None:
+    """Answer a natural-language question from the user's notes."""
+    try:
+        notes = await notes_service.list_all_notes_for_rag()
+        result = await run_query_agent(QueryInput(question=question, notes=notes))
+    except Exception as exc:
+        logger.error("Query agent error in Telegram handler: %s", exc)
+        background_tasks.add_task(
+            tg_service.send_message,
+            chat_id=chat_id,
+            text="⚠️ Something went wrong answering that. Please try again.",
+        )
+        return
+    background_tasks.add_task(
+        tg_service.send_message, chat_id=chat_id, text=result.answer
+    )
 
 
 async def _save_note(
