@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { useEditor, EditorContent } from '@tiptap/react'
+import { useEditor, EditorContent, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { Table } from '@tiptap/extension-table'
 import { TableCell } from '@tiptap/extension-table-cell'
@@ -130,8 +130,7 @@ export default function NoteEditor({ note, folders, initialTodos }: Props) {
     content: note.content ?? '',
     immediatelyRender: false,
     onUpdate({ editor }) {
-      const md = (editor.storage as unknown as { markdown: { getMarkdown: () => string } }).markdown
-      debouncedSave({ content: md.getMarkdown() })
+      debouncedSave({ content: getMarkdownWithWidths(editor) })
     },
     editorProps: {
       handlePaste(_view, event) {
@@ -169,8 +168,7 @@ export default function NoteEditor({ note, folders, initialTodos }: Props) {
 
   async function cleanupNote() {
     if (!editor) return
-    const md = (editor.storage as unknown as { markdown: { getMarkdown: () => string } }).markdown
-    const currentContent = md.getMarkdown()
+    const currentContent = getMarkdownWithWidths(editor)
     setCleaning(true)
     try {
       const res = await fetch('/api/cleanup', {
@@ -333,6 +331,32 @@ export default function NoteEditor({ note, folders, initialTodos }: Props) {
       </div>
     </div>
   )
+}
+
+// ---------------------------------------------------------------------------
+// Serialize markdown, replacing ![alt](url) with <img width="N"> for images
+// that have a width attribute set so the width survives a save/reload cycle.
+// ---------------------------------------------------------------------------
+
+function getMarkdownWithWidths(editor: Editor): string {
+  const storage = editor.storage as unknown as { markdown: { getMarkdown: () => string } }
+  const md = storage.markdown.getMarkdown()
+
+  // Collect src → width for every image node that has a width set
+  const widths = new Map<string, number>()
+  editor.state.doc.descendants((node) => {
+    if (node.type.name === 'image' && node.attrs.width && node.attrs.src) {
+      widths.set(node.attrs.src as string, node.attrs.width as number)
+    }
+  })
+  if (!widths.size) return md
+
+  // Replace standard markdown image syntax with an HTML <img> that carries width
+  return md.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt: string, src: string) => {
+    const w = widths.get(src)
+    if (!w) return match
+    return `<img src="${src}"${alt ? ` alt="${alt}"` : ''} width="${w}" />`
+  })
 }
 
 // ---------------------------------------------------------------------------
