@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 120" width="420" height="120">
+  <g transform="translate(60,60)">
+    <circle fill="#ffffff" cx="0" cy="-16" r="13"/>
+    <path d="M -52 -16 A 52 20 0 1 1 52 -16" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+    <path d="M -52 -16 A 52 20 0 0 0 -34 -3" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+    <path d="M  52 -16 A 52 20 0 0 1  34 -3" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+    <line x1="0" y1="-3" x2="0" y2="42" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+  </g>
+  <text
+    x="136" y="70"
+    font-family="system-ui, -apple-system, sans-serif"
+    font-size="48"
+    font-weight="500"
+    fill="#ffffff"
+    letter-spacing="10"
+  >MERKUR</text>
+</svg>

@@ -90,7 +90,7 @@ export default function TodosView({ initialTodos }: Props) {
             )}
             <Link
               href={`/notes/${group.noteId}`}
-              className="text-sm font-medium text-stone-700 hover:text-amber-700"
+              className="text-sm font-medium text-stone-700 dark:text-stone-300 hover:text-amber-700 dark:hover:text-amber-400"
             >
               {group.noteTitle}
             </Link>
@@ -134,7 +134,7 @@ function TodoRow({ todo, onToggle, onDelete }: RowProps) {
     todo.due_date && !todo.done && new Date(todo.due_date) < new Date(new Date().toDateString())
 
   return (
-    <li className="group flex items-center gap-2 py-0.5 rounded hover:bg-stone-50 px-1">
+    <li className="group flex items-center gap-2 py-0.5 rounded hover:bg-stone-100 dark:hover:bg-stone-800/50 px-1">
       <input
         type="checkbox"
         checked={todo.done}
@@ -142,7 +142,7 @@ function TodoRow({ todo, onToggle, onDelete }: RowProps) {
         className="shrink-0 accent-amber-500 cursor-pointer"
       />
       <span
-        className={`flex-1 text-sm ${todo.done ? 'line-through text-stone-400' : 'text-stone-700'}`}
+        className={`flex-1 text-sm ${todo.done ? 'line-through text-stone-400' : 'text-stone-700 dark:text-stone-200'}`}
       >
         {todo.text}
       </span>

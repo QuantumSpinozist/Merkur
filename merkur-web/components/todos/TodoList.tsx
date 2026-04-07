@@ -87,12 +87,14 @@ export default function TodoList({ noteId, initialTodos }: Props) {
   const done = todos.filter((t) => t.done)
 
   return (
-    <div className="mt-8 border-t border-stone-200 pt-6">
+    <div className="mt-8 border-t border-stone-200 dark:border-stone-700 pt-6">
       <div className="flex items-center justify-between mb-3">
-        <span className="text-xs font-medium text-stone-400 uppercase tracking-wide">Todos</span>
+        <span className="text-xs font-medium text-stone-400 dark:text-stone-500 uppercase tracking-wide">
+          Todos
+        </span>
         <button
           onClick={() => setShowAddForm((v) => !v)}
-          className="text-stone-400 hover:text-stone-700 text-base leading-none"
+          className="text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 text-base leading-none"
           title="Add todo"
         >
           +
@@ -100,7 +102,7 @@ export default function TodoList({ noteId, initialTodos }: Props) {
       </div>
 
       {showAddForm && (
-        <div className="mb-3 p-3 bg-stone-50 rounded border border-stone-200 space-y-2">
+        <div className="mb-3 p-3 bg-stone-50 dark:bg-stone-800/50 rounded border border-stone-200 dark:border-stone-700 space-y-2">
           <input
             autoFocus
             type="text"
@@ -111,19 +113,19 @@ export default function TodoList({ noteId, initialTodos }: Props) {
               if (e.key === 'Escape') setShowAddForm(false)
             }}
             placeholder="What needs to be done?"
-            className="w-full text-sm bg-white border border-stone-300 rounded px-2 py-1 outline-none focus:border-amber-400"
+            className="w-full text-sm bg-white dark:bg-stone-800 dark:text-stone-100 dark:placeholder:text-stone-500 border border-stone-300 dark:border-stone-600 rounded px-2 py-1 outline-none focus:border-amber-400"
           />
           <div className="flex items-center gap-2">
             <input
               type="date"
               value={newDueDate}
               onChange={(e) => setNewDueDate(e.target.value)}
-              className="text-xs bg-white border border-stone-300 rounded px-2 py-1 outline-none focus:border-amber-400 text-stone-500"
+              className="text-xs bg-white dark:bg-stone-800 dark:text-stone-300 border border-stone-300 dark:border-stone-600 rounded px-2 py-1 outline-none focus:border-amber-400 text-stone-500"
             />
             <select
               value={newRecurrence}
               onChange={(e) => setNewRecurrence(e.target.value as TodoRecurrence | '')}
-              className="text-xs bg-white border border-stone-300 rounded px-2 py-1 outline-none focus:border-amber-400 text-stone-500"
+              className="text-xs bg-white dark:bg-stone-800 dark:text-stone-300 border border-stone-300 dark:border-stone-600 rounded px-2 py-1 outline-none focus:border-amber-400 text-stone-500"
             >
               <option value="">no repeat</option>
               <option value="daily">daily</option>
@@ -142,7 +144,9 @@ export default function TodoList({ noteId, initialTodos }: Props) {
       )}
 
       {todos.length === 0 && !showAddForm && (
-        <p className="text-xs text-stone-400 py-1">No todos yet. Click + to add one.</p>
+        <p className="text-xs text-stone-400 dark:text-stone-500 py-1">
+          No todos yet. Click + to add one.
+        </p>
       )}
 
       <ul className="space-y-1">
@@ -191,7 +195,7 @@ function TodoItem({ todo, onToggle, onDelete, onRecurrenceChange, onDueDateChang
     todo.due_date && !todo.done && new Date(todo.due_date) < new Date(new Date().toDateString())
 
   return (
-    <li className="group flex items-start gap-2 py-1 rounded hover:bg-stone-50 px-1">
+    <li className="group flex items-start gap-2 py-1 rounded hover:bg-stone-100 dark:hover:bg-stone-800/50 px-1">
       <input
         type="checkbox"
         checked={todo.done}
@@ -199,7 +203,9 @@ function TodoItem({ todo, onToggle, onDelete, onRecurrenceChange, onDueDateChang
         className="mt-0.5 shrink-0 accent-amber-500 cursor-pointer"
       />
       <div className="flex-1 min-w-0">
-        <span className={`text-sm ${todo.done ? 'line-through text-stone-400' : 'text-stone-700'}`}>
+        <span
+          className={`text-sm ${todo.done ? 'line-through text-stone-400' : 'text-stone-700 dark:text-stone-200'}`}
+        >
           {todo.text}
         </span>
         <div className="flex items-center gap-2 mt-0.5 flex-wrap">

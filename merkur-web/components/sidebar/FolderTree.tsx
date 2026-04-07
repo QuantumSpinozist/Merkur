@@ -99,7 +99,9 @@ export default function FolderTree({ folders }: Props) {
       <div key={folder.id}>
         <div
           className={`flex items-center gap-1 px-2 py-1 rounded group ${
-            isActive ? 'bg-amber-100 text-amber-900' : 'hover:bg-stone-200 text-stone-600'
+            isActive
+              ? 'bg-amber-100 dark:bg-amber-900/20 text-amber-900 dark:text-amber-300'
+              : 'hover:bg-stone-200 dark:hover:bg-stone-800 text-stone-600 dark:text-stone-400'
           }`}
           style={{ paddingLeft: `${(depth + 1) * 10}px` }}
         >
@@ -124,7 +126,7 @@ export default function FolderTree({ folders }: Props) {
                 if (e.key === 'Enter') void commitRename(folder.id)
                 if (e.key === 'Escape') setRenaming(null)
               }}
-              className="flex-1 bg-white border border-stone-300 rounded px-1 text-sm"
+              className="flex-1 bg-white dark:bg-stone-800 border border-stone-300 dark:border-stone-600 dark:text-stone-100 rounded px-1 text-sm"
               autoFocus
             />
           ) : (
@@ -165,10 +167,12 @@ export default function FolderTree({ folders }: Props) {
   return (
     <div>
       <div className="flex items-center justify-between px-2 py-1 mb-1">
-        <span className="text-xs font-medium text-stone-400 uppercase tracking-wide">Folders</span>
+        <span className="text-xs font-medium text-stone-400 dark:text-stone-500 uppercase tracking-wide">
+          Folders
+        </span>
         <button
           onClick={() => void createFolder()}
-          className="text-stone-400 hover:text-stone-700 text-base leading-none"
+          className="text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 text-base leading-none"
           title="New folder"
         >
           +

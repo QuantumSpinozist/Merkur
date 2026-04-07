@@ -57,7 +57,9 @@ export default async function TodosPage() {
 
   return (
     <div className="max-w-2xl mx-auto p-8">
-      <h1 className="text-2xl font-serif font-semibold text-stone-800 mb-6">Todos</h1>
+      <h1 className="text-2xl font-serif font-semibold text-stone-800 dark:text-stone-100 mb-6">
+        Todos
+      </h1>
       <TodosView initialTodos={normalised} />
     </div>
   )

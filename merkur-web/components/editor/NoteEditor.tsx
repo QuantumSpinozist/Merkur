@@ -98,7 +98,7 @@ export default function NoteEditor({ note, folders, initialTodos }: Props) {
   return (
     <div className="max-w-2xl mx-auto p-8">
       {/* Toolbar */}
-      <div className="flex items-center justify-between mb-4 text-sm text-stone-400">
+      <div className="flex items-center justify-between mb-4 text-sm text-stone-400 dark:text-stone-500">
         <select
           value={folderId ?? ''}
           onChange={(e) => void handleFolderChange(e.target.value)}
@@ -132,12 +132,12 @@ export default function NoteEditor({ note, folders, initialTodos }: Props) {
         type="text"
         value={title}
         onChange={(e) => handleTitleChange(e.target.value)}
-        className="w-full text-3xl font-serif font-semibold text-stone-800 bg-transparent border-none outline-none mb-6 placeholder:text-stone-300"
+        className="w-full text-3xl font-serif font-semibold text-stone-800 dark:text-stone-100 bg-transparent border-none outline-none mb-6 placeholder:text-stone-300 dark:placeholder:text-stone-600"
         placeholder="Untitled"
       />
 
       {/* Editor */}
-      <div className="prose prose-stone max-w-none font-serif">
+      <div className="prose prose-stone dark:prose-invert max-w-none font-serif">
         <EditorContent editor={editor} />
       </div>
 
