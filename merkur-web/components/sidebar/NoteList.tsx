@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { Folder, Note } from '@/lib/types'
@@ -11,8 +12,20 @@ type Props = {
   notes: Note[]
 }
 
-export default function NoteList({ folder, notes }: Props) {
+async function persistOrder(ids: string[]) {
+  await fetch('/api/reorder', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'note', ordered_ids: ids }),
+  })
+}
+
+export default function NoteList({ folder, notes: initialNotes }: Props) {
   const router = useRouter()
+  const [notes, setNotes] = useState<Note[]>(initialNotes)
+
+  const dragId = useRef<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<string | null>(null)
 
   async function createNote() {
     const res = await fetch('/api/notes', {
@@ -22,6 +35,19 @@ export default function NoteList({ folder, notes }: Props) {
     })
     const note = (await res.json()) as Note
     router.push(`/notes/${note.id}`)
+  }
+
+  function reorderNotes(draggedId: string, targetId: string) {
+    const from = notes.findIndex((n) => n.id === draggedId)
+    const to = notes.findIndex((n) => n.id === targetId)
+    if (from === -1 || to === -1 || from === to) return
+
+    const reordered = [...notes]
+    const [item] = reordered.splice(from, 1)
+    reordered.splice(to, 0, item)
+
+    setNotes(reordered)
+    void persistOrder(reordered.map((n) => n.id))
   }
 
   return (
@@ -40,12 +66,42 @@ export default function NoteList({ folder, notes }: Props) {
       ) : (
         <ul className="flex flex-col gap-2">
           {notes.map((note) => (
-            <li key={note.id}>
+            <li
+              key={note.id}
+              draggable
+              onDragStart={(e) => {
+                dragId.current = note.id
+                e.dataTransfer.effectAllowed = 'move'
+              }}
+              onDragEnd={() => {
+                dragId.current = null
+                setDropTarget(null)
+              }}
+              onDragOver={(e) => {
+                e.preventDefault()
+                if (dragId.current && dragId.current !== note.id) {
+                  setDropTarget(note.id)
+                }
+              }}
+              onDragLeave={() => setDropTarget(null)}
+              onDrop={(e) => {
+                e.preventDefault()
+                if (dragId.current && dragId.current !== note.id) {
+                  reorderNotes(dragId.current, note.id)
+                }
+                setDropTarget(null)
+              }}
+              className={[
+                'cursor-grab active:cursor-grabbing rounded-lg transition-shadow',
+                dropTarget === note.id ? 'ring-2 ring-amber-400' : '',
+              ].join(' ')}
+            >
               <Link
                 href={`/notes/${note.id}`}
-                className="block p-3 bg-white rounded-lg border border-stone-200 hover:border-amber-300 hover:bg-amber-50 transition-colors"
+                draggable={false}
+                className="block p-3 bg-white dark:bg-stone-800 rounded-lg border border-stone-200 dark:border-stone-700 hover:border-amber-300 dark:hover:border-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/10 transition-colors"
               >
-                <p className="font-medium text-stone-800 text-sm">
+                <p className="font-medium text-stone-800 dark:text-stone-100 text-sm">
                   {truncateTitle(note.title, 60)}
                 </p>
                 <p className="text-xs text-stone-400 mt-0.5">

@@ -9,7 +9,7 @@ export default async function Sidebar() {
   const { data: folders } = await supabase
     .from('folders')
     .select('id, name, parent_id, created_at, updated_at')
-    .order('name', { ascending: true })
+    .order('position', { ascending: true })
 
   return (
     <aside className="w-full h-full bg-stone-100 dark:bg-stone-900 border-r border-stone-200 dark:border-stone-700 flex flex-col">

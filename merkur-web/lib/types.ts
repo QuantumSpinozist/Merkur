@@ -2,6 +2,7 @@ export type Folder = {
   id: string
   name: string
   parent_id: string | null
+  position: number
   created_at: string
   updated_at: string
 }
@@ -13,6 +14,7 @@ export type Note = {
   folder_id: string | null
   source: 'web' | 'telegram'
   is_cleaned: boolean
+  position: number
   created_at: string
   updated_at: string
 }

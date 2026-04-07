@@ -15,7 +15,7 @@ export async function GET() {
   const { data, error } = await supabase
     .from('folders')
     .select('id, name, parent_id, created_at, updated_at')
-    .order('name', { ascending: true })
+    .order('position', { ascending: true })
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })

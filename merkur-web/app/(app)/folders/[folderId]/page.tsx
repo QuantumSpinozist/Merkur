@@ -20,7 +20,7 @@ export default async function FolderPage({ params }: Props) {
       .from('notes')
       .select('id, title, content, folder_id, source, is_cleaned, created_at, updated_at')
       .eq('folder_id', params.folderId)
-      .order('updated_at', { ascending: false }),
+      .order('position', { ascending: true }),
   ])
 
   if (!folder) notFound()

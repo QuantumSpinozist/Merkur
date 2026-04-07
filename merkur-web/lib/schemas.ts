@@ -62,3 +62,8 @@ export const updateTodoSchema = z.object({
 export const deleteTodoSchema = z.object({
   id: z.string().uuid('Invalid todo ID'),
 })
+
+export const reorderSchema = z.object({
+  type: z.enum(['folder', 'note']),
+  ordered_ids: z.array(z.string().uuid()).min(1),
+})

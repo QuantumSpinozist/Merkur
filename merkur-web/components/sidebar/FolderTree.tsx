@@ -9,13 +9,26 @@ type Props = {
   folders: Folder[]
 }
 
-export default function FolderTree({ folders }: Props) {
+async function persistOrder(ids: string[]) {
+  await fetch('/api/reorder', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'folder', ordered_ids: ids }),
+  })
+}
+
+export default function FolderTree({ folders: initialFolders }: Props) {
   const router = useRouter()
   const pathname = usePathname()
+  const [folders, setFolders] = useState<Folder[]>(initialFolders)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [renaming, setRenaming] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
+
+  // DnD state — track which id is being dragged and which is hovered
+  const dragId = useRef<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<string | null>(null)
 
   const topLevel = folders.filter((f) => f.parent_id === null)
   const childrenOf = (parentId: string) => folders.filter((f) => f.parent_id === parentId)
@@ -90,19 +103,65 @@ export default function FolderTree({ folders }: Props) {
     router.push(`/folders/${folder.id}`)
   }
 
+  // Reorder siblings of the dragged item
+  function reorderFolders(draggedId: string, targetId: string, parentId: string | null) {
+    const siblings = folders.filter((f) => f.parent_id === parentId)
+    const from = siblings.findIndex((f) => f.id === draggedId)
+    const to = siblings.findIndex((f) => f.id === targetId)
+    if (from === -1 || to === -1 || from === to) return
+
+    const reordered = [...siblings]
+    const [item] = reordered.splice(from, 1)
+    reordered.splice(to, 0, item)
+
+    // Rebuild full folders list with new siblings order
+    setFolders((prev) => {
+      const others = prev.filter((f) => f.parent_id !== parentId)
+      return [...others, ...reordered]
+    })
+
+    void persistOrder(reordered.map((f) => f.id))
+  }
+
   function renderFolder(folder: Folder, depth = 0) {
     const children = childrenOf(folder.id)
     const isExpanded = expanded.has(folder.id)
     const isActive = pathname === `/folders/${folder.id}`
+    const isDropTarget = dropTarget === folder.id
 
     return (
       <div key={folder.id}>
         <div
-          className={`flex items-center gap-1 px-2 py-1 rounded group ${
+          draggable
+          onDragStart={(e) => {
+            dragId.current = folder.id
+            e.dataTransfer.effectAllowed = 'move'
+          }}
+          onDragEnd={() => {
+            dragId.current = null
+            setDropTarget(null)
+          }}
+          onDragOver={(e) => {
+            e.preventDefault()
+            if (dragId.current && dragId.current !== folder.id) {
+              setDropTarget(folder.id)
+            }
+          }}
+          onDragLeave={() => setDropTarget(null)}
+          onDrop={(e) => {
+            e.preventDefault()
+            if (dragId.current && dragId.current !== folder.id) {
+              reorderFolders(dragId.current, folder.id, folder.parent_id)
+            }
+            setDropTarget(null)
+          }}
+          className={[
+            'flex items-center gap-1 px-2 py-1 rounded group cursor-grab active:cursor-grabbing',
             isActive
               ? 'bg-amber-100 dark:bg-amber-900/20 text-amber-900 dark:text-amber-300'
-              : 'hover:bg-stone-200 dark:hover:bg-stone-800 text-stone-600 dark:text-stone-400'
-          }`}
+              : 'hover:bg-stone-200 dark:hover:bg-stone-800 text-stone-600 dark:text-stone-400',
+            isDropTarget ? 'ring-1 ring-amber-400' : '',
+          ].join(' ')}
           style={{ paddingLeft: `${(depth + 1) * 10}px` }}
         >
           {children.length > 0 ? (
@@ -134,6 +193,7 @@ export default function FolderTree({ folders }: Props) {
               href={`/folders/${folder.id}`}
               className="flex-1 text-sm truncate"
               onDoubleClick={() => startRename(folder)}
+              draggable={false}
             >
               {folder.name}
             </Link>
