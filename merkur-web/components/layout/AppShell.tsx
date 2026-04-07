@@ -12,20 +12,20 @@ const MAX_WIDTH = 500
 const DEFAULT_WIDTH = 256
 
 export default function AppShell({ sidebar, children }: Props) {
-  const [open, setOpen] = useState(true)
-  const [width, setWidth] = useState(DEFAULT_WIDTH)
+  const [open, setOpen] = useState(() => {
+    if (typeof window === 'undefined') return true
+    const saved = localStorage.getItem('sidebar-open')
+    return saved !== null ? saved === 'true' : true
+  })
+  const [width, setWidth] = useState(() => {
+    if (typeof window === 'undefined') return DEFAULT_WIDTH
+    const saved = localStorage.getItem('sidebar-width')
+    return saved ? parseInt(saved) : DEFAULT_WIDTH
+  })
   const [isDragging, setIsDragging] = useState(false)
   const dragging = useRef(false)
   const startX = useRef(0)
   const startWidth = useRef(0)
-
-  // Rehydrate from localStorage
-  useEffect(() => {
-    const savedWidth = localStorage.getItem('sidebar-width')
-    const savedOpen = localStorage.getItem('sidebar-open')
-    if (savedWidth) setWidth(parseInt(savedWidth))
-    if (savedOpen !== null) setOpen(savedOpen === 'true')
-  }, [])
 
   useEffect(() => {
     localStorage.setItem('sidebar-width', String(width))
