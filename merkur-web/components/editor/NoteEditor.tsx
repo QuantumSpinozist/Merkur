@@ -52,7 +52,7 @@ export default function NoteEditor({ note, folders, initialTodos }: Props) {
   )
 
   const editor = useEditor({
-    extensions: [StarterKit, Markdown],
+    extensions: [StarterKit, Markdown.configure({ transformPastedText: true })],
     content: note.content ?? '',
     immediatelyRender: false,
     onUpdate({ editor }) {
