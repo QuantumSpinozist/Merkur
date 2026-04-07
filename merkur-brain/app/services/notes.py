@@ -195,6 +195,44 @@ async def create_todo(
     )
 
 
+async def append_note_content(note_id: str, text: str) -> NoteRecord:
+    """Append text to an existing note, separated by a blank line."""
+    client = get_client()
+    result = (
+        client.table("notes")
+        .select("id, title, content, folder_id, source, is_cleaned")
+        .eq("id", note_id)
+        .single()
+        .execute()
+    )
+    existing = result.data.get("content") or ""
+    separator = "\n\n" if existing.strip() else ""
+    new_content = existing + separator + text
+    client.table("notes").update({"content": new_content}).eq("id", note_id).execute()
+    logger.info("Appended to note %s.", note_id)
+    return NoteRecord(**{**result.data, "content": new_content})
+
+
+async def update_todo_fields(
+    todo_id: str,
+    text: str | None = None,
+    due_date: str | None = None,
+    recurrence: str | None = None,
+) -> None:
+    """Update mutable fields on an existing todo."""
+    client = get_client()
+    payload: dict = {}
+    if text is not None:
+        payload["text"] = text
+    if due_date is not None:
+        payload["due_date"] = due_date
+    if recurrence is not None:
+        payload["recurrence"] = recurrence
+    if payload:
+        client.table("todos").update(payload).eq("id", todo_id).execute()
+        logger.info("Updated todo %s: %s", todo_id, list(payload.keys()))
+
+
 async def mark_todo_done(todo_id: str) -> None:
     """Mark a todo as done and record when it was completed."""
     from datetime import datetime, timezone

@@ -30,7 +30,7 @@ async def run_cleanup_agent(input_data: CleanupInput) -> CleanupOutput:
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
     user_message = (
-        f"Note title: {input_data.title}\n\n" f"Raw content:\n{input_data.raw_content}"
+        f"Note title: {input_data.title}\n\nRaw content:\n{input_data.raw_content}"
     )
 
     try:

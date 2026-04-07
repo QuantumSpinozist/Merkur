@@ -41,7 +41,7 @@ async def run_intake_agent(input_data: IntakeInput) -> IntakeOutput:
 
     folders_json = json.dumps(input_data.available_folders, ensure_ascii=False)
     user_message = (
-        f"Available folders: {folders_json}\n\n" f"Message: {input_data.raw_message}"
+        f"Available folders: {folders_json}\n\nMessage: {input_data.raw_message}"
     )
 
     try:

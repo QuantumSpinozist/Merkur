@@ -423,12 +423,105 @@ async def _handle_intent(
             tg_service.send_message, chat_id=chat_id, text=" — ".join(parts)
         )
 
+    elif action.action == "append_note":
+        if not action.note_query or not action.note_content:
+            background_tasks.add_task(
+                tg_service.send_message,
+                chat_id=chat_id,
+                text=(
+                    "I understood you want to add to a note but couldn't "
+                    "identify which note or what to add. Please be more specific."
+                ),
+            )
+            return
+        try:
+            if "/" in action.note_query:
+                folder_part, _, title_part = action.note_query.partition("/")
+                note = await notes_service.find_note_by_title(
+                    title_part.strip(), folder_query=folder_part.strip()
+                )
+            else:
+                note = await notes_service.find_note_by_title(action.note_query)
+            if note is None:
+                background_tasks.add_task(
+                    tg_service.send_message,
+                    chat_id=chat_id,
+                    text=(
+                        f'⚠️ No note found matching "{action.note_query}". '
+                        "Check the title and try again."
+                    ),
+                )
+                return
+            note = await notes_service.append_note_content(note.id, action.note_content)
+        except Exception as exc:
+            logger.error("Intent: failed to append to note: %s", exc)
+            background_tasks.add_task(
+                tg_service.send_message,
+                chat_id=chat_id,
+                text="⚠️ Something went wrong updating the note.",
+            )
+            return
+        background_tasks.add_task(
+            tg_service.send_message,
+            chat_id=chat_id,
+            text=f"📝 Added to *{note.title}*.",
+        )
+
     elif action.action == "create_note":
         await _save_note(
             action.note_content or text,
             chat_id,
             background_tasks,
             forced_title=action.note_title,
+        )
+
+    elif action.action == "update_todo":
+        number = action.todo_number
+        if not number:
+            background_tasks.add_task(
+                tg_service.send_message,
+                chat_id=chat_id,
+                text="Which todo? Use /todo list for numbers, then specify the change.",
+            )
+            return
+        try:
+            todos = await notes_service.list_pending_todos()
+        except Exception as exc:
+            logger.error("Intent: failed to fetch todos for update: %s", exc)
+            background_tasks.add_task(
+                tg_service.send_message,
+                chat_id=chat_id,
+                text="⚠️ Could not load todos.",
+            )
+            return
+        if number < 1 or number > len(todos):
+            background_tasks.add_task(
+                tg_service.send_message,
+                chat_id=chat_id,
+                text=f"No todo #{number}. Use /todo list to see the current list.",
+            )
+            return
+        todo = todos[number - 1]
+        try:
+            await notes_service.update_todo_fields(
+                todo_id=todo.id,
+                text=action.todo_text,
+                due_date=action.todo_due_date,
+                recurrence=action.todo_recurrence,
+            )
+        except Exception as exc:
+            logger.error("Intent: failed to update todo: %s", exc)
+            background_tasks.add_task(
+                tg_service.send_message,
+                chat_id=chat_id,
+                text="⚠️ Something went wrong updating the todo.",
+            )
+            return
+        updated_text = action.todo_text or todo.text
+        background_tasks.add_task(
+            tg_service.send_message,
+            chat_id=chat_id,
+            text=f'✏️ Updated todo #{number}: "{updated_text}"',
         )
 
     elif action.action == "list_todos":
