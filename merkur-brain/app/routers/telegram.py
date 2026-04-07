@@ -78,15 +78,15 @@ async def receive_update(request: Request, background_tasks: BackgroundTasks) ->
     chat_id = message.chat.id
     text = message.text or ""
 
+    # Always persist chat_id so the scheduler knows where to send reminders
+    background_tasks.add_task(
+        settings_service.set_setting, "reminder_chat_id", str(chat_id)
+    )
+
     # --- Command dispatch ---
     if text.startswith("/"):
         await _handle_command(text, chat_id, background_tasks)
         return {"ok": True}
-
-    # Store chat_id so the scheduler knows where to send reminders
-    background_tasks.add_task(
-        settings_service.set_setting, "reminder_chat_id", str(chat_id)
-    )
 
     # --- Plain text → save as note ---
     await _save_note(text, chat_id, background_tasks)

@@ -1,9 +1,12 @@
 import { createClient } from '@/lib/supabase/server'
 import TodosView from '@/components/todos/TodosView'
+import { resetExpiredRecurring } from '@/lib/resetRecurring'
 import type { TodoWithNote } from '@/lib/types'
 
 export default async function TodosPage() {
   const supabase = createClient()
+
+  await resetExpiredRecurring(supabase)
 
   // Fetch all todos joined with note title and folder name
   const { data: todos } = await supabase

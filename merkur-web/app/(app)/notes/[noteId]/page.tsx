@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import NoteEditor from '@/components/editor/NoteEditor'
+import { resetExpiredRecurring } from '@/lib/resetRecurring'
 import type { Folder, Note, Todo } from '@/lib/types'
 
 type Props = {
@@ -9,6 +10,8 @@ type Props = {
 
 export default async function NotePage({ params }: Props) {
   const supabase = createClient()
+
+  await resetExpiredRecurring(supabase)
 
   const [{ data: note }, { data: folders }, { data: todos }] = await Promise.all([
     supabase.from('notes').select('*').eq('id', params.noteId).single(),
