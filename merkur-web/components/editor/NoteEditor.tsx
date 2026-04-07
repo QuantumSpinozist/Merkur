@@ -30,17 +30,16 @@ export default function NoteEditor({ note, folders, initialTodos }: Props) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const saveAbortRef = useRef<AbortController | null>(null)
 
-  // Content width drag
-  const [contentWidth, setContentWidth] = useState(DEFAULT_CONTENT_WIDTH)
+  // Content width drag — lazy init reads localStorage so value survives navigation
+  const [contentWidth, setContentWidth] = useState(() => {
+    if (typeof window === 'undefined') return DEFAULT_CONTENT_WIDTH
+    const saved = localStorage.getItem('note-content-width')
+    return saved ? parseInt(saved) : DEFAULT_CONTENT_WIDTH
+  })
   const [isResizing, setIsResizing] = useState(false)
   const resizeDragging = useRef(false)
   const resizeStartX = useRef(0)
   const resizeStartWidth = useRef(0)
-
-  useEffect(() => {
-    const saved = localStorage.getItem('note-content-width')
-    if (saved) setContentWidth(parseInt(saved))
-  }, [])
 
   useEffect(() => {
     localStorage.setItem('note-content-width', String(contentWidth))
