@@ -8,6 +8,7 @@ import { Table } from '@tiptap/extension-table'
 import { TableCell } from '@tiptap/extension-table-cell'
 import { TableHeader } from '@tiptap/extension-table-header'
 import { TableRow } from '@tiptap/extension-table-row'
+import Image from '@tiptap/extension-image'
 import { Markdown } from 'tiptap-markdown'
 import TodoList from '@/components/todos/TodoList'
 import type { Folder, Note, Todo } from '@/lib/types'
@@ -28,6 +29,8 @@ export default function NoteEditor({ note, folders, initialTodos }: Props) {
   const [folderId, setFolderId] = useState<string | null>(note.folder_id)
   const [lastSaved, setLastSaved] = useState<Date | null>(null)
   const [cleaning, setCleaning] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const saveAbortRef = useRef<AbortController | null>(null)
 
@@ -120,6 +123,7 @@ export default function NoteEditor({ note, folders, initialTodos }: Props) {
       TableRow,
       TableHeader,
       TableCell,
+      Image.configure({ inline: false, allowBase64: false }),
       Markdown.configure({ transformPastedText: true }),
     ],
     content: note.content ?? '',
@@ -127,6 +131,26 @@ export default function NoteEditor({ note, folders, initialTodos }: Props) {
     onUpdate({ editor }) {
       const md = (editor.storage as unknown as { markdown: { getMarkdown: () => string } }).markdown
       debouncedSave({ content: md.getMarkdown() })
+    },
+    editorProps: {
+      handlePaste(_view, event) {
+        const items = Array.from(event.clipboardData?.items ?? [])
+        const imageFiles = items
+          .filter((i) => i.kind === 'file' && i.type.startsWith('image/'))
+          .map((i) => i.getAsFile())
+          .filter((f): f is File => f !== null)
+        if (!imageFiles.length) return false
+        void handleImageFiles(imageFiles)
+        return true
+      },
+      handleDrop(_view, event) {
+        const files = Array.from(event.dataTransfer?.files ?? [])
+        const imageFiles = files.filter((f) => f.type.startsWith('image/'))
+        if (!imageFiles.length) return false
+        event.preventDefault()
+        void handleImageFiles(imageFiles)
+        return true
+      },
     },
   })
 
@@ -160,6 +184,37 @@ export default function NoteEditor({ note, folders, initialTodos }: Props) {
     } finally {
       setCleaning(false)
     }
+  }
+
+  async function uploadImage(file: File): Promise<string | null> {
+    const resized = await resizeImage(file, 1200)
+    const form = new FormData()
+    form.append('file', resized)
+    const res = await fetch('/api/upload', { method: 'POST', body: form })
+    if (!res.ok) return null
+    const { url } = (await res.json()) as { url: string }
+    return url
+  }
+
+  async function handleImageFiles(files: File[]) {
+    if (!editor) return
+    const images = files.filter((f) => f.type.startsWith('image/'))
+    if (!images.length) return
+    setUploading(true)
+    try {
+      for (const file of images) {
+        const url = await uploadImage(file)
+        if (url) editor.chain().focus().setImage({ src: url }).run()
+      }
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  async function handleFileInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? [])
+    await handleImageFiles(files)
+    e.target.value = ''
   }
 
   async function deleteNote() {
@@ -204,6 +259,14 @@ export default function NoteEditor({ note, folders, initialTodos }: Props) {
               </span>
             )}
             <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="hover:text-amber-600 transition-colors disabled:opacity-40"
+              title="Insert image"
+            >
+              {uploading ? 'Uploading…' : 'Image'}
+            </button>
+            <button
               onClick={() => void cleanupNote()}
               disabled={cleaning}
               className="hover:text-amber-600 transition-colors disabled:opacity-40"
@@ -217,6 +280,14 @@ export default function NoteEditor({ note, folders, initialTodos }: Props) {
             >
               Delete
             </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={(e) => void handleFileInputChange(e)}
+            />
           </div>
         </div>
 
@@ -245,4 +316,43 @@ export default function NoteEditor({ note, folders, initialTodos }: Props) {
       </div>
     </div>
   )
+}
+
+// ---------------------------------------------------------------------------
+// Image resize helper — scales down to maxPx on the longest edge, JPEG output
+// ---------------------------------------------------------------------------
+
+function resizeImage(file: File, maxPx: number): Promise<File> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file)
+    const img = new window.Image()
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const { width, height } = img
+      const scale = Math.min(1, maxPx / Math.max(width, height))
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.round(width * scale)
+      canvas.height = Math.round(height * scale)
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      canvas.toBlob(
+        (blob) => {
+          resolve(
+            blob
+              ? new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), {
+                  type: 'image/jpeg',
+                })
+              : file
+          )
+        },
+        'image/jpeg',
+        0.82
+      )
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      resolve(file)
+    }
+    img.src = url
+  })
 }
