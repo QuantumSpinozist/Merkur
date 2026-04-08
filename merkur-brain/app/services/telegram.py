@@ -28,6 +28,28 @@ async def send_message(chat_id: int, text: str) -> None:
             logger.info("Telegram message sent to chat %s.", chat_id)
 
 
+async def get_file_path(file_id: str) -> str:
+    """Resolve a Telegram file_id to a downloadable file_path via getFile."""
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            _api_url("getFile"),
+            params={"file_id": file_id},
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data["result"]["file_path"]
+
+
+async def download_file(file_path: str) -> bytes:
+    """Download a file from Telegram's CDN by its file_path."""
+    token = os.environ["TELEGRAM_BOT_TOKEN"]
+    url = f"https://api.telegram.org/file/bot{token}/{file_path}"
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url)
+        response.raise_for_status()
+        return response.content
+
+
 async def set_commands() -> None:
     """Register bot commands so they appear in the Telegram / menu."""
     commands = [

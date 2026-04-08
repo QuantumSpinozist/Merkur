@@ -22,6 +22,7 @@ from app.models import (
 from app.services import notes as notes_service
 from app.services import scheduler as scheduler_service
 from app.services import settings as settings_service
+from app.services import storage as storage_service
 from app.services import telegram as tg_service
 
 logger = logging.getLogger(__name__)
@@ -74,26 +75,36 @@ async def receive_update(request: Request, background_tasks: BackgroundTasks) ->
         logger.error("Failed to parse Telegram update: %s", exc)
         return {"ok": True}
 
-    message = _extract_text_message(update)
+    message = _extract_message(update)
     if message is None:
-        logger.info("Non-text or empty Telegram update. Ignoring.")
+        logger.info("Unhandled or empty Telegram update. Ignoring.")
         return {"ok": True}
 
     chat_id = message.chat.id
-    text = message.text or ""
+    # For photo messages use caption as text; could be empty
+    text = message.text or message.caption or ""
 
     # Always persist chat_id so the scheduler knows where to send reminders
     background_tasks.add_task(
         settings_service.set_setting, "reminder_chat_id", str(chat_id)
     )
 
+    # Download and upload photo to Supabase Storage if present
+    image_url: str | None = None
+    if message.photo_file_id:
+        try:
+            image_url = await _fetch_and_store_photo(message.photo_file_id)
+        except Exception as exc:
+            logger.error("Failed to store Telegram photo: %s", exc)
+            # Proceed without the image rather than failing entirely
+
     # --- Command dispatch ---
     if text.startswith("/"):
-        await _handle_command(text, chat_id, background_tasks)
+        await _handle_command(text, chat_id, background_tasks, image_url=image_url)
         return {"ok": True}
 
-    # --- Plain text → save as note ---
-    await _save_note(text, chat_id, background_tasks)
+    # --- Plain text / photo → save as note ---
+    await _save_note(text, chat_id, background_tasks, image_url=image_url)
     return {"ok": True}
 
 
@@ -103,7 +114,10 @@ async def receive_update(request: Request, background_tasks: BackgroundTasks) ->
 
 
 async def _handle_command(
-    text: str, chat_id: int, background_tasks: BackgroundTasks
+    text: str,
+    chat_id: int,
+    background_tasks: BackgroundTasks,
+    image_url: str | None = None,
 ) -> None:
     command, _, arg = text.partition(" ")
     command = command.lower().split("@")[0]  # strip bot username if present
@@ -119,7 +133,7 @@ async def _handle_command(
         )
 
     elif command == "/note":
-        if not arg.strip():
+        if not arg.strip() and not image_url:
             background_tasks.add_task(
                 tg_service.send_message,
                 chat_id=chat_id,
@@ -128,7 +142,11 @@ async def _handle_command(
         else:
             content, forced_title = _parse_note_flags(arg.strip())
             await _save_note(
-                content, chat_id, background_tasks, forced_title=forced_title
+                content,
+                chat_id,
+                background_tasks,
+                forced_title=forced_title,
+                image_url=image_url,
             )
 
     elif command == "/show":
@@ -162,7 +180,9 @@ async def _handle_command(
 
     else:
         # Free-text instruction prefixed with "/" — route to intent agent
-        await _handle_intent(text[1:].strip(), chat_id, background_tasks)
+        await _handle_intent(
+            text[1:].strip(), chat_id, background_tasks, image_url=image_url
+        )
 
 
 async def _handle_todo(
@@ -370,7 +390,10 @@ async def _handle_remind(
 
 
 async def _handle_intent(
-    text: str, chat_id: int, background_tasks: BackgroundTasks
+    text: str,
+    chat_id: int,
+    background_tasks: BackgroundTasks,
+    image_url: str | None = None,
 ) -> None:
     """Route a free-text '/' instruction through the intent agent."""
     try:
@@ -462,7 +485,7 @@ async def _handle_intent(
         )
 
     elif action.action == "append_note":
-        if not action.note_query or not action.note_content:
+        if not action.note_query or (not action.note_content and not image_url):
             background_tasks.add_task(
                 tg_service.send_message,
                 chat_id=chat_id,
@@ -490,7 +513,13 @@ async def _handle_intent(
                     ),
                 )
                 return
-            note = await notes_service.append_note_content(note.id, action.note_content)
+            append_text = action.note_content or ""
+            if image_url:
+                img_tag = f'<img src="{image_url}" width="600" />'
+                append_text = (
+                    f"{append_text}\n\n{img_tag}" if append_text.strip() else img_tag
+                )
+            note = await notes_service.append_note_content(note.id, append_text)
         except Exception as exc:
             logger.error("Intent: failed to append to note: %s", exc)
             background_tasks.add_task(
@@ -511,6 +540,7 @@ async def _handle_intent(
             chat_id,
             background_tasks,
             forced_title=action.note_title,
+            image_url=image_url,
         )
 
     elif action.action == "update_todo":
@@ -668,19 +698,27 @@ async def _save_note(
     chat_id: int,
     background_tasks: BackgroundTasks,
     forced_title: str | None = None,
+    image_url: str | None = None,
 ) -> None:
     """Run intake agent, persist note, schedule cleanup, send confirmation."""
     try:
         folders = await notes_service.list_folders()
         folder_list = [{"id": f.id, "name": f.name} for f in folders]
 
+        # Give the intake agent something to work with even for photo-only messages
+        intake_text = text or "(photo)"
         intake_output = await run_intake_agent(
-            IntakeInput(raw_message=text, available_folders=folder_list)
+            IntakeInput(raw_message=intake_text, available_folders=folder_list)
         )
+
+        content = intake_output.content
+        if image_url:
+            img_tag = f'<img src="{image_url}" width="600" />'
+            content = f"{content}\n\n{img_tag}" if content.strip() else img_tag
 
         note = await notes_service.create_note(
             title=forced_title or intake_output.title,
-            content=intake_output.content,
+            content=content,
             folder_id=intake_output.folder_id,
         )
     except Exception as exc:
@@ -695,7 +733,7 @@ async def _save_note(
     background_tasks.add_task(
         _run_cleanup,
         note_id=note.id,
-        raw_content=intake_output.content,
+        raw_content=content,
         title=note.title,
     )
 
@@ -719,16 +757,28 @@ def _verify_secret(token_header: str) -> None:
         raise HTTPException(status_code=403, detail="Invalid secret token")
 
 
-def _extract_text_message(update: TelegramUpdate) -> TelegramMessage | None:
+def _extract_message(update: TelegramUpdate) -> TelegramMessage | None:
+    """Return a TelegramMessage if the update contains text or a photo."""
     if update.message is None:
         return None
     try:
         msg = TelegramMessage.from_payload(update.message)
-        if msg.text:
+        if msg.text or msg.photo_file_id:
             return msg
     except Exception as exc:
         logger.error("Error extracting Telegram message: %s", exc)
     return None
+
+
+async def _fetch_and_store_photo(file_id: str) -> str:
+    """Download a Telegram photo and upload it to Supabase Storage.
+
+    Returns the public URL of the stored image.
+    """
+    file_path = await tg_service.get_file_path(file_id)
+    data = await tg_service.download_file(file_path)
+    ext = file_path.rsplit(".", 1)[-1] if "." in file_path else "jpg"
+    return await storage_service.upload_image(data, ext=ext)
 
 
 def _find_folder_name(folders: list[dict[str, str]], folder_id: str | None) -> str:

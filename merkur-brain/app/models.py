@@ -53,6 +53,8 @@ class TelegramMessage(BaseModel):
     from_: TelegramUser | None = None  # absent in channel posts
     chat: TelegramChat
     text: str | None = None
+    photo_file_id: str | None = None  # file_id of the largest available photo size
+    caption: str | None = None  # caption text on a photo message
 
     model_config = {"populate_by_name": True}
 
@@ -60,11 +62,20 @@ class TelegramMessage(BaseModel):
     def from_payload(cls, data: dict) -> "TelegramMessage":
         """Parse a message object from a Telegram Update payload."""
         from_data = data.get("from")
+
+        # photo is a list of PhotoSize objects sorted by resolution; last = largest
+        photo_file_id: str | None = None
+        photo_list = data.get("photo")
+        if photo_list:
+            photo_file_id = photo_list[-1]["file_id"]
+
         return cls(
             message_id=data["message_id"],
             from_=TelegramUser(**from_data) if from_data else None,
             chat=TelegramChat(**data["chat"]),
             text=data.get("text"),
+            photo_file_id=photo_file_id,
+            caption=data.get("caption"),
         )
 
 
