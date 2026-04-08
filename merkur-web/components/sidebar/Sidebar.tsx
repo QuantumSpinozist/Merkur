@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import FolderTree from './FolderTree'
 import TodosNavLink from './TodosNavLink'
@@ -15,12 +16,14 @@ export default async function Sidebar() {
   return (
     <aside className="w-full h-full bg-stone-100 dark:bg-stone-900 border-r border-stone-200 dark:border-stone-700 flex flex-col">
       <div className="px-4 py-3 border-b border-stone-200 dark:border-stone-700">
-        {/* Light logo */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/merkur-logo.svg" alt="Merkur" className="h-12 w-auto dark:hidden" />
-        {/* Dark logo */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/merkur-logo-dark.svg" alt="Merkur" className="h-12 w-auto hidden dark:block" />
+        <Link href="/" className="inline-block">
+          {/* Light logo */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/merkur-logo.svg" alt="Merkur" className="h-12 w-auto dark:hidden" />
+          {/* Dark logo */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/merkur-logo-dark.svg" alt="Merkur" className="h-12 w-auto hidden dark:block" />
+        </Link>
         <span className="text-xs text-stone-400 dark:text-stone-500">v0.1.0</span>
       </div>
       <div className="flex-1 overflow-y-auto p-2">
