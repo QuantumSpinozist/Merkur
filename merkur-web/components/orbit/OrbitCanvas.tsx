@@ -245,8 +245,8 @@ export default function OrbitCanvas({ maxDots = MAX_DOTS }: OrbitCanvasProps) {
     ctx.beginPath()
     ctx.ellipse(cx, cy, todoRx, todoRy, 0, 0, 2 * Math.PI)
     ctx.strokeStyle = color
-    ctx.globalAlpha = 0.06
-    ctx.lineWidth = 0.5
+    ctx.globalAlpha = 0.12
+    ctx.lineWidth = 1
     ctx.stroke()
     ctx.globalAlpha = 1
 
