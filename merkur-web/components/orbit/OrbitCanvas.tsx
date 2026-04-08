@@ -23,6 +23,7 @@ const FADE_STEP = 1 / 20 // progress per frame (fade-in over 20 frames)
 const STAGGER_DELAY = 8 // frames between sequential dot appearances
 const TODO_ORBIT_OFFSET = 80 // px further out than parent note's orbit radius
 const TODO_DOT_RADIUS = 3
+const FOLDER_LABEL_RADIUS_FACTOR = 0.68 // fraction of R — inside note orbit
 
 // Tailwind stone palette values used in canvas drawing
 const COLOR_LIGHT = '#1c1917' // stone-900
@@ -51,6 +52,12 @@ interface TodoDot {
   noteIndex: number // index into dotsRef.current
   angleOffset: number // fixed angular offset from parent note angle (radians)
   text: string // todo text shown on hover
+  fadeProgress: number
+}
+
+interface FolderLabel {
+  name: string
+  angle: number // base angle of folder cluster
   fadeProgress: number
 }
 
@@ -94,6 +101,7 @@ export default function OrbitCanvas({ maxDots = MAX_DOTS }: OrbitCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const dotsRef = useRef<OrbitDot[]>([])
   const todoDotsRef = useRef<TodoDot[]>([])
+  const folderLabelsRef = useRef<FolderLabel[]>([])
   const rafRef = useRef<number>(0)
   const arcAngleRef = useRef<number>(0)
   const lastTimeRef = useRef<number>(0)
@@ -163,6 +171,22 @@ export default function OrbitCanvas({ maxDots = MAX_DOTS }: OrbitCanvasProps) {
         })
 
         dotsRef.current = dots
+
+        // Fetch folder names and build FolderLabel entries
+        const realFolderIds = folderOrder.filter((k) => k !== '__inbox__')
+        supabase
+          .from('folders')
+          .select('id, name')
+          .in('id', realFolderIds.length > 0 ? realFolderIds : ['__never__'])
+          .then(({ data: folderData }) => {
+            const nameMap = new Map<string, string>()
+            folderData?.forEach((f) => nameMap.set(f.id as string, f.name as string))
+            folderLabelsRef.current = folderOrder.map((key, i) => ({
+              name: key === '__inbox__' ? 'Inbox' : (nameMap.get(key) ?? 'Folder'),
+              angle: folderBaseAngle.get(key) ?? 0,
+              fadeProgress: -(i * STAGGER_DELAY * FADE_STEP),
+            }))
+          })
 
         // Fetch pending todos for visible notes and build TodoDot entries
         const noteIds = notes.map((n) => n.id)
@@ -278,6 +302,27 @@ export default function OrbitCanvas({ maxDots = MAX_DOTS }: OrbitCanvasProps) {
     ctx.globalAlpha = 0.9
     ctx.fill()
     ctx.globalAlpha = 1
+
+    // ---- Folder labels (inside note orbit, bold) --------------------
+    const folderLabels = folderLabelsRef.current
+    folderLabels.forEach((fl) => {
+      fl.fadeProgress = Math.min(1, fl.fadeProgress + FADE_STEP)
+    })
+    const labelR = R * FOLDER_LABEL_RADIUS_FACTOR
+    const labelRy = labelR * 0.38
+    ctx.font = `bold 13px system-ui, -apple-system, sans-serif`
+    ctx.textBaseline = 'middle'
+    ctx.textAlign = 'center'
+    folderLabels.forEach((fl) => {
+      const fade = Math.max(0, fl.fadeProgress)
+      if (fade <= 0) return
+      const [lx, ly] = ellipsePoint(cx, cy, labelR, labelRy, fl.angle)
+      ctx.fillStyle = color
+      ctx.globalAlpha = 0.65 * fade
+      ctx.fillText(fl.name, lx, ly)
+      ctx.globalAlpha = 1
+    })
+    ctx.textBaseline = 'top'
 
     const dots = dotsRef.current
     if (dots.length === 0) {
