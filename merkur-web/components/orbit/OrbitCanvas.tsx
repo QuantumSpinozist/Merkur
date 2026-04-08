@@ -21,6 +21,8 @@ const DOT_HOVER_RADIUS = 8
 const LABEL_MAX_CHARS = 20
 const FADE_STEP = 1 / 20 // progress per frame (fade-in over 20 frames)
 const STAGGER_DELAY = 8 // frames between sequential dot appearances
+const TODO_ORBIT_OFFSET = 48 // px further out than parent note's orbit radius
+const TODO_DOT_RADIUS = 3
 
 // Tailwind stone palette values used in canvas drawing
 const COLOR_LIGHT = '#1c1917' // stone-900
@@ -43,6 +45,12 @@ interface OrbitDot {
   speed: number // rad/s
   radiusJitter: number // px added to R
   fadeProgress: number // −N…1; negative = not yet started fading in
+}
+
+interface TodoDot {
+  noteIndex: number // index into dotsRef.current
+  angleOffset: number // fixed angular offset from parent note angle (radians)
+  fadeProgress: number
 }
 
 export interface OrbitCanvasProps {
@@ -84,6 +92,7 @@ function dist2(ax: number, ay: number, bx: number, by: number): number {
 export default function OrbitCanvas({ maxDots = MAX_DOTS }: OrbitCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const dotsRef = useRef<OrbitDot[]>([])
+  const todoDotsRef = useRef<TodoDot[]>([])
   const rafRef = useRef<number>(0)
   const arcAngleRef = useRef<number>(0)
   const lastTimeRef = useRef<number>(0)
@@ -152,6 +161,42 @@ export default function OrbitCanvas({ maxDots = MAX_DOTS }: OrbitCanvasProps) {
         })
 
         dotsRef.current = dots
+
+        // Fetch pending todos for visible notes and build TodoDot entries
+        const noteIds = notes.map((n) => n.id)
+        supabase
+          .from('todos')
+          .select('id, note_id')
+          .eq('done', false)
+          .in('note_id', noteIds)
+          .then(({ data: todoData }) => {
+            if (!todoData || todoData.length === 0) return
+
+            // Build a map from note_id → index in dots array
+            const noteIdxMap = new Map<string, number>()
+            dots.forEach((d, i) => noteIdxMap.set(d.note.id, i))
+
+            // Group todos by note so we can spread their angle offsets
+            const byNote = new Map<string, number>()
+            const todoDots: TodoDot[] = []
+
+            todoData.forEach((t) => {
+              const noteIndex = noteIdxMap.get(t.note_id)
+              if (noteIndex === undefined) return
+
+              const count = byNote.get(t.note_id) ?? 0
+              byNote.set(t.note_id, count + 1)
+
+              // Spread multiple todos per note: ±6° per slot
+              const spread = (6 * Math.PI) / 180
+              const angleOffset =
+                (count - Math.floor(count / 2)) * spread * (count % 2 === 0 ? -1 : 1)
+
+              todoDots.push({ noteIndex, angleOffset, fadeProgress: 0 })
+            })
+
+            todoDotsRef.current = todoDots
+          })
       })
   }, [maxDots])
 
@@ -240,6 +285,18 @@ export default function OrbitCanvas({ maxDots = MAX_DOTS }: OrbitCanvasProps) {
       return ellipsePoint(cx, cy, rx2, ry2, dot.angle)
     })
 
+    // Advance todo fade progress and compute todo positions
+    const todoDots = todoDotsRef.current
+    todoDots.forEach((td) => {
+      td.fadeProgress = Math.min(1, td.fadeProgress + FADE_STEP)
+    })
+    const todoPositions = todoDots.map((td) => {
+      const parent = dots[td.noteIndex]
+      const angle = parent.angle + td.angleOffset
+      const rBase = rx + parent.radiusJitter + TODO_ORBIT_OFFSET
+      return ellipsePoint(cx, cy, rBase, rBase * 0.38, angle)
+    })
+
     // ---- Folder connection lines ------------------------------------
     ctx.lineWidth = 0.5
     for (let i = 0; i < dots.length; i++) {
@@ -261,6 +318,38 @@ export default function OrbitCanvas({ maxDots = MAX_DOTS }: OrbitCanvasProps) {
       }
     }
     ctx.globalAlpha = 1
+
+    // ---- Todo → note dashed connecting lines ------------------------
+    ctx.lineWidth = 0.5
+    ctx.setLineDash([3, 4])
+    todoDots.forEach((td, i) => {
+      const fade = Math.max(0, td.fadeProgress)
+      if (fade <= 0) return
+      const noteFade = Math.max(0, dots[td.noteIndex].fadeProgress)
+      const [tx, ty] = todoPositions[i]
+      const [nx, ny] = positions[td.noteIndex]
+      ctx.beginPath()
+      ctx.moveTo(tx, ty)
+      ctx.lineTo(nx, ny)
+      ctx.strokeStyle = color
+      ctx.globalAlpha = 0.2 * Math.min(fade, noteFade)
+      ctx.stroke()
+    })
+    ctx.setLineDash([])
+    ctx.globalAlpha = 1
+
+    // ---- Todo dots --------------------------------------------------
+    todoDots.forEach((td, i) => {
+      const fade = Math.max(0, td.fadeProgress)
+      if (fade <= 0) return
+      const [tx, ty] = todoPositions[i]
+      ctx.beginPath()
+      ctx.arc(tx, ty, TODO_DOT_RADIUS, 0, 2 * Math.PI)
+      ctx.fillStyle = color
+      ctx.globalAlpha = 0.5 * fade
+      ctx.fill()
+      ctx.globalAlpha = 1
+    })
 
     // ---- Note dots + labels -----------------------------------------
     ctx.font = `11px system-ui, -apple-system, sans-serif`
