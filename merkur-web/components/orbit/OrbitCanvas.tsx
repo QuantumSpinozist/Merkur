@@ -21,7 +21,7 @@ const DOT_HOVER_RADIUS = 8
 const LABEL_MAX_CHARS = 20
 const FADE_STEP = 1 / 20 // progress per frame (fade-in over 20 frames)
 const STAGGER_DELAY = 8 // frames between sequential dot appearances
-const TODO_ORBIT_OFFSET = 48 // px further out than parent note's orbit radius
+const TODO_ORBIT_OFFSET = 80 // px further out than parent note's orbit radius
 const TODO_DOT_RADIUS = 3
 
 // Tailwind stone palette values used in canvas drawing
@@ -50,6 +50,7 @@ interface OrbitDot {
 interface TodoDot {
   noteIndex: number // index into dotsRef.current
   angleOffset: number // fixed angular offset from parent note angle (radians)
+  text: string // todo text shown on hover
   fadeProgress: number
 }
 
@@ -97,6 +98,7 @@ export default function OrbitCanvas({ maxDots = MAX_DOTS }: OrbitCanvasProps) {
   const arcAngleRef = useRef<number>(0)
   const lastTimeRef = useRef<number>(0)
   const hoveredRef = useRef<number>(-1)
+  const hoveredTodoRef = useRef<number>(-1)
   const router = useRouter()
 
   // ------------------------------------------------------------------
@@ -166,7 +168,7 @@ export default function OrbitCanvas({ maxDots = MAX_DOTS }: OrbitCanvasProps) {
         const noteIds = notes.map((n) => n.id)
         supabase
           .from('todos')
-          .select('id, note_id')
+          .select('id, note_id, text')
           .eq('done', false)
           .in('note_id', noteIds)
           .then(({ data: todoData }) => {
@@ -192,7 +194,7 @@ export default function OrbitCanvas({ maxDots = MAX_DOTS }: OrbitCanvasProps) {
               const angleOffset =
                 (count - Math.floor(count / 2)) * spread * (count % 2 === 0 ? -1 : 1)
 
-              todoDots.push({ noteIndex, angleOffset, fadeProgress: 0 })
+              todoDots.push({ noteIndex, angleOffset, text: t.text as string, fadeProgress: 0 })
             })
 
             todoDotsRef.current = todoDots
@@ -234,6 +236,17 @@ export default function OrbitCanvas({ maxDots = MAX_DOTS }: OrbitCanvasProps) {
     ctx.strokeStyle = color
     ctx.globalAlpha = 0.12
     ctx.lineWidth = 1
+    ctx.stroke()
+    ctx.globalAlpha = 1
+
+    // ---- Todo orbit ring (larger, thinner) --------------------------
+    const todoRx = rx + TODO_ORBIT_OFFSET
+    const todoRy = todoRx * 0.38
+    ctx.beginPath()
+    ctx.ellipse(cx, cy, todoRx, todoRy, 0, 0, 2 * Math.PI)
+    ctx.strokeStyle = color
+    ctx.globalAlpha = 0.06
+    ctx.lineWidth = 0.5
     ctx.stroke()
     ctx.globalAlpha = 1
 
@@ -338,17 +351,32 @@ export default function OrbitCanvas({ maxDots = MAX_DOTS }: OrbitCanvasProps) {
     ctx.setLineDash([])
     ctx.globalAlpha = 1
 
-    // ---- Todo dots --------------------------------------------------
+    // ---- Todo dots + labels on hover --------------------------------
+    ctx.font = `10px system-ui, -apple-system, sans-serif`
+    ctx.textBaseline = 'top'
+    const hoveredTodo = hoveredTodoRef.current
     todoDots.forEach((td, i) => {
       const fade = Math.max(0, td.fadeProgress)
       if (fade <= 0) return
       const [tx, ty] = todoPositions[i]
+      const isHovered = i === hoveredTodo
+      const r = isHovered ? TODO_DOT_RADIUS + 2 : TODO_DOT_RADIUS
+
       ctx.beginPath()
-      ctx.arc(tx, ty, TODO_DOT_RADIUS, 0, 2 * Math.PI)
+      ctx.arc(tx, ty, r, 0, 2 * Math.PI)
       ctx.fillStyle = color
-      ctx.globalAlpha = 0.5 * fade
+      ctx.globalAlpha = (isHovered ? 0.9 : 0.5) * fade
       ctx.fill()
       ctx.globalAlpha = 1
+
+      if (isHovered) {
+        const label = truncate(td.text, LABEL_MAX_CHARS)
+        ctx.fillStyle = color
+        ctx.textAlign = 'center'
+        ctx.globalAlpha = fade
+        ctx.fillText(label, tx, ty + r + 4)
+        ctx.globalAlpha = 1
+      }
     })
 
     // ---- Note dots + labels -----------------------------------------
@@ -443,15 +471,44 @@ export default function OrbitCanvas({ maxDots = MAX_DOTS }: OrbitCanvasProps) {
     return -1
   }, [])
 
+  const getHoveredTodoIndex = useCallback((e: React.MouseEvent<HTMLCanvasElement>): number => {
+    const canvas = canvasRef.current
+    if (!canvas) return -1
+    const rect = canvas.getBoundingClientRect()
+    const mx = e.clientX - rect.left
+    const my = e.clientY - rect.top
+
+    const W = rect.width
+    const H = rect.height
+    const cx = W / 2
+    const cy = H / 2
+    const R = Math.min(W * 0.42, H * 0.68)
+    const rx = R
+
+    const dots = dotsRef.current
+    const todoDots = todoDotsRef.current
+    for (let i = 0; i < todoDots.length; i++) {
+      if (todoDots[i].fadeProgress <= 0) continue
+      const parent = dots[todoDots[i].noteIndex]
+      const angle = parent.angle + todoDots[i].angleOffset
+      const rBase = rx + parent.radiusJitter + TODO_ORBIT_OFFSET
+      const [tx, ty] = ellipsePoint(cx, cy, rBase, rBase * 0.38, angle)
+      if (dist2(mx, my, tx, ty) <= HIT_RADIUS ** 2) return i
+    }
+    return -1
+  }, [])
+
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       const idx = getHoveredIndex(e)
+      const todoIdx = idx < 0 ? getHoveredTodoIndex(e) : -1
       hoveredRef.current = idx
+      hoveredTodoRef.current = todoIdx
       if (canvasRef.current) {
-        canvasRef.current.style.cursor = idx >= 0 ? 'pointer' : 'default'
+        canvasRef.current.style.cursor = idx >= 0 || todoIdx >= 0 ? 'pointer' : 'default'
       }
     },
-    [getHoveredIndex]
+    [getHoveredIndex, getHoveredTodoIndex]
   )
 
   const handleClick = useCallback(
@@ -466,6 +523,7 @@ export default function OrbitCanvas({ maxDots = MAX_DOTS }: OrbitCanvasProps) {
 
   const handleMouseLeave = useCallback(() => {
     hoveredRef.current = -1
+    hoveredTodoRef.current = -1
     if (canvasRef.current) canvasRef.current.style.cursor = 'default'
   }, [])
 
