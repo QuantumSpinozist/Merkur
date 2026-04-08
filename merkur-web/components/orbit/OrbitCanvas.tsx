@@ -23,7 +23,7 @@ const FADE_STEP = 1 / 20 // progress per frame (fade-in over 20 frames)
 const STAGGER_DELAY = 8 // frames between sequential dot appearances
 const TODO_ORBIT_OFFSET = 80 // px further out than parent note's orbit radius
 const TODO_DOT_RADIUS = 3
-const FOLDER_LABEL_RADIUS_FACTOR = 0.68 // fraction of R — inside note orbit
+const FOLDER_LABEL_RADIUS_FACTOR = 0.8 // fraction of R — inside note orbit
 
 // Tailwind stone palette values used in canvas drawing
 const COLOR_LIGHT = '#1c1917' // stone-900
@@ -57,7 +57,7 @@ interface TodoDot {
 
 interface FolderLabel {
   name: string
-  angle: number // base angle of folder cluster
+  folderKey: string // folder_id or '__inbox__' — used to find current dot angles each frame
   fadeProgress: number
 }
 
@@ -183,7 +183,7 @@ export default function OrbitCanvas({ maxDots = MAX_DOTS }: OrbitCanvasProps) {
             folderData?.forEach((f) => nameMap.set(f.id as string, f.name as string))
             folderLabelsRef.current = folderOrder.map((key, i) => ({
               name: key === '__inbox__' ? 'Inbox' : (nameMap.get(key) ?? 'Folder'),
-              angle: folderBaseAngle.get(key) ?? 0,
+              folderKey: key,
               fadeProgress: -(i * STAGGER_DELAY * FADE_STEP),
             }))
           })
@@ -304,6 +304,7 @@ export default function OrbitCanvas({ maxDots = MAX_DOTS }: OrbitCanvasProps) {
     ctx.globalAlpha = 1
 
     // ---- Folder labels (inside note orbit, bold) --------------------
+    // Drawn before dots are advanced so we read current angles first
     const folderLabels = folderLabelsRef.current
     folderLabels.forEach((fl) => {
       fl.fadeProgress = Math.min(1, fl.fadeProgress + FADE_STEP)
@@ -316,7 +317,15 @@ export default function OrbitCanvas({ maxDots = MAX_DOTS }: OrbitCanvasProps) {
     folderLabels.forEach((fl) => {
       const fade = Math.max(0, fl.fadeProgress)
       if (fade <= 0) return
-      const [lx, ly] = ellipsePoint(cx, cy, labelR, labelRy, fl.angle)
+      // Circular mean of current angles for all dots in this folder
+      const memberDots = dotsRef.current.filter(
+        (d) => (d.note.folder_id ?? '__inbox__') === fl.folderKey
+      )
+      if (memberDots.length === 0) return
+      const sinSum = memberDots.reduce((s, d) => s + Math.sin(d.angle), 0)
+      const cosSum = memberDots.reduce((s, d) => s + Math.cos(d.angle), 0)
+      const meanAngle = Math.atan2(sinSum, cosSum)
+      const [lx, ly] = ellipsePoint(cx, cy, labelR, labelRy, meanAngle)
       ctx.fillStyle = color
       ctx.globalAlpha = 0.65 * fade
       ctx.fillText(fl.name, lx, ly)
